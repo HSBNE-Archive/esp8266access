@@ -50,6 +50,11 @@ IPAddress myIP; // us, once we know it.
 const char *ssid = "HSBNEWIFI";
 const char *password = "xxxxxxxxxxxxx";
 
+// static IP address assigment, gateway, and netmask.
+char * Cipa = "192.168.192.75";
+char * Cgate = "192.168.192.1";
+char * Csubnetmask = "255.255.254.0";
+char * deviceName = "buzztest";
 
 int next_empty_slot = -1; 
 
@@ -337,13 +342,8 @@ void setup() {
         // DYNAMIC or SERVER ASSIGNED IP SETUP
         //WiFi.mode(WIFI_STA); // WIFI_AP or WIFI_STA
         //WiFi.begin(ssid,password );
-        // OR: 
-        // STATIC IP ASSIGNMENT:
-        char * Cipa = "192.168.192.75";
-        char * deviceName = "buzztest";
-        char * Cgate = "192.168.192.1";
-        char * Csubnetmask = "255.255.254.0";
-        
+        //OR:
+        // STATIC IP ASSIGNMENT..      
         WiFi.mode(WIFI_STA);
         IPAddress ipa;   ipa.fromString(Cipa); 
         IPAddress gate;  gate.fromString(Cgate);
@@ -558,7 +558,7 @@ bool rfid_is_valid() {
     if ( found_in_eeprom ) return true; 
 
     // check if remote server sats it's good..? 
-    if ( remote_server_says_yes(rfid_tag,42,"buzztest")  == 1 ) { 
+    if ( remote_server_says_yes(rfid_tag,42,deviceName)  == 1 ) { 
         Serial.println("remote server approved tag -OK-.");
         tagcache.rfid_tag = rfid_tag;
         
@@ -713,7 +713,7 @@ void loop() {
      Serial.println(F("network poll checking now.... "));
 
      unsigned long test_code = 1234567890;
-    if ( remote_server_says_yes(test_code,42,"buzztest") >= 0  ) {   // in thise case, if the server permits OR denies, both are valid comms with the server.
+    if ( remote_server_says_yes(test_code,42,deviceName) >= 0  ) {   // in thise case, if the server permits OR denies, both are valid comms with the server.
         Serial.println("....remote server COMMS TEST tag OK.");
         // lastConnectionTime is also updated inside the above function call, so we don't need to do it here. 
     } 

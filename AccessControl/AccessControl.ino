@@ -334,8 +334,24 @@ void setup() {
         Serial.print("Configuring as Station, NOT AP...");
         // Connect to pre-existing WiFi network with WIFI_STA
         WiFi.disconnect();
-        WiFi.mode(WIFI_STA); // WIFI_AP or WIFI_STA
-        WiFi.begin(ssid,password );
+        // DYNAMIC or SERVER ASSIGNED IP SETUP
+        //WiFi.mode(WIFI_STA); // WIFI_AP or WIFI_STA
+        //WiFi.begin(ssid,password );
+        // OR: 
+        // STATIC IP ASSIGNMENT:
+        char * Cipa = "192.168.192.75";
+        char * deviceName = "buzztest";
+        char * Cgate = "192.168.192.1";
+        char * Csubnetmask = "255.255.254.0";
+        
+        WiFi.mode(WIFI_STA);
+        IPAddress ipa;   ipa.fromString(Cipa); 
+        IPAddress gate;  gate.fromString(Cgate);
+        IPAddress subnetmask; subnetmask.fromString(Csubnetmask);
+        
+        WiFi.hostname(deviceName);      // DHCP Hostname (useful for finding device for static lease)
+        WiFi.config(ipa, gate, subnetmask);  // (DNS not required)
+        WiFi.begin(ssid, password);
 
         // on wifi connect and wifi disconnect events, we get notified. 
         WiFi.onStationModeGotIP(onSTAGotIP);// As soon WiFi is connected, start NTP Client

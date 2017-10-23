@@ -347,7 +347,7 @@ void CheckFlashConfig() {
         Serial.println("Flash Chip configuration ok.\n");
     }
 
-    delay(5000);
+    //delay(1000);
 }
 
 

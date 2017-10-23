@@ -21,10 +21,17 @@
 #define EEPROM_SIZE 1024
 #define MEMORY_HEADER_LEN 100
 #define MEMORY_RFID_LENGTH 4
+
+#define ENABLE_ESTOP_AS_EGRESS_BUTTON 1
+// on SONOFF GPIO0 is the oboard bushbutton, but an external button can be soldered over-the-top so either/both work.  any gpio except GPIO16 is ok.
+#define EGRESS_OR_ESTOP 0 
+
 // END DEFINES --------------------------------------------------------
 
 // START GLOBALS --------------------------------------------------------
 
+const byte interruptPin = EGRESS_OR_ESTOP;
+volatile byte interruptCounter = 0; // changes to non-zero on interrupt for use outside of the interrupt. 
 
 WiFiUDP NTP;    // yep NTP is actually a UDP protocol. 
 int tzoffset = 10*3600;    // 10hrs in seconds.
@@ -293,6 +300,12 @@ void onSTADisconnected(WiFiEventStationModeDisconnected event_info) {
   timeClient.end();
 }
 
+// only called by GPIO0 being pulled to GND. ( ie pushbutton ) 
+void handleInterrupt() {
+  interruptCounter++;
+}
+
+
 void setup() {
         Serial.begin(19200);
         delay(1000);
@@ -303,9 +316,10 @@ void setup() {
         // LED and relay
         pinMode(GREEN_ONBOARD_LED, OUTPUT);     // Initialize the  pin as an output
         pinMode(RELAY_ONBOARD, OUTPUT);     // Initialize the pin as an output
-        //pinMode(14, INPUT);     // Initialize the  pin as an output
-        //pinMode(buttonPin, OUTPUT);
+        pinMode(interruptPin, INPUT_PULLUP); // pushbutton on GPIO0
 
+        
+        attachInterrupt(digitalPinToInterrupt(interruptPin), handleInterrupt, FALLING);
 
         // epprom has rfid tags cached.
         EEPROM.begin(EEPROM_SIZE); // any number up to 4096.  don't forget EEPROM.commit() after EEPROM.write()
@@ -637,6 +651,7 @@ void cache_rfid(int next_empty_slot, struct config_t tagcache) {
 }
 
 
+
 void clear_rfids_from_eeprom() { 
     for(int i=MEMORY_HEADER_LEN; i < EEPROM_SIZE ;i+=MEMORY_RFID_LENGTH)
     {
@@ -652,6 +667,14 @@ void loop() {
    HTTP.handleClient(); // http server requests need handling... 
 
    timeClient.update(); // NTP packets   for current time do this:   Serial.println(timeClient.getFormattedTime());
+
+  #ifdef ENABLE_ESTOP_AS_EGRESS_BUTTON
+  if ( interruptCounter  > 0 ) { 
+    card_ok_entry_permitted();  //calling another functon from interrupt context can generate crashes
+    previousMillis = millis(); // this triggers a door-lock event a few seconds later.
+    interruptCounter = 0;
+  }
+  #endif
 
   // this little loop relies on the serial RFIS data getting into our serial buffer smartly, so it's all there before our delay(2) runs out.
   while ( readerSerial.available() ) { 

@@ -93,16 +93,23 @@ int ledState = LOW;
 // if there's been any change in the data, and we'll be formulating a new UDP packet..
 int udpnew = 0;
 
+// passed to logger.php, and also expected in the POST to verify it's legit.
+String programmed_secret = "abc123"; 
+
 //END GLOBALS --------------------------------------------------------
 
-
+// so function matches callback.
 void handleHTTP() {
+  handleHTTPplus("");
+}
+
+void handleHTTPplus(String toclient) {
         Serial.print("A / http client connected, fyi.\n");
         WiFiClient x = HTTP.client();
         IPAddress i = x.remoteIP();
         Serial.println(i);
 
-        String toclient = "";
+        //String toclient = "";
 
         Serial.print("LAST UPDATE WAS AT:"); 
         Serial.println(get_long_from_offset(96));
@@ -156,6 +163,7 @@ void handleHTTP() {
 String get_nice_date_from_epoch(unsigned long now_epoch_secs) {
         // display a more human time info
         GetDateTimeFromUnix(now_epoch_secs);
+        
         //  human info approximating  YYYY/MM/DD-HH:MM:SS format. 
         String Str_now = "REAL_TIME:";
          String YearStr = String(Year + 2000); 
@@ -173,21 +181,64 @@ String get_nice_date_from_epoch(unsigned long now_epoch_secs) {
 //  only accepts POST requests for now. 
 bool handleHTTPusers() {
         Serial.print("A /users http client connected, fyi.\n");
-        //WiFiClient x = HTTP.client();
-       // IPAddress i = x.remoteIP();
-       // Serial.println(i);
-        
+
+        // did the POST request come from the 'server' IP we have hardcoded in here..? 
+        WiFiClient x = HTTP.client();
+        IPAddress i = x.remoteIP();
+
+        Serial.print("client connected from IP:" );
+        Serial.println(i);
+
+        // convert the string for the remot server's IP into an address format.
+        IPAddress ihost; ihost.fromString(host);
+
+         
         String from_client = HTTP.arg("plain");
         String toclient = "";
 
+      if ( i != ihost ) { 
+            Serial.print("client connected from  WRONG IP:" );
+            Serial.print(i);
+            Serial.print(" instead of ");
+            Serial.println(ihost);
+            toclient += "client connected from  WRONG IP: "; 
+            toclient += i;
+            toclient += " instead of ";
+            toclient += ihost;
+            toclient += "<br>\n";
+           handleHTTPplus(toclient);  
+           return false;
+        } else { 
+            Serial.println("Client connected from CORRECT IP, continuing." );          
+        }
+       
+
         if (HTTP.hasArg("plain")== false){
            //Expecting POST request for user list, if we didn't get it, just display the default page with info.
-           handleHTTP();  
+           handleHTTPplus("Expecting POST request for user list, dodn't get it.");  
            return false;
         }
 
         // to get to this point in the code, it's got to be a POST, and to the /users endpoint, do we trust it? 
-        // TODO more verification., but for now, yes. 
+        // a bit more verification, just to be on the safe side. 
+        // here we require one of the lines of POST data to be like this: 'secret:somethingspecial\n'
+        int secretstart = from_client.indexOf("secret:");
+        secretstart += 7 ; // to skip over the 'secret:' bit 
+        int secretend  = from_client.indexOf('\n', secretstart+1);
+        if (( secretstart >= 0 ) && ( secretend > 0) )  { 
+           String mysecret = from_client.substring(secretstart,secretend ); 
+           // don't display this, as it's secret. :-) 
+           //Serial.print("SECRET:"); Serial.println(mysecret);
+           //toclient += "SECRET:"; toclient += mysecret; toclient += "<br>\n";
+
+           if ( mysecret != programmed_secret ) { 
+              handleHTTPplus("Expecting 'secret' as part of  request for user list, didn't get it.");  
+              return false;
+           } else { 
+             // secret was accepted OK, say nothing about it here.
+           }
+          
+        }
 
         // we're about to get a whole new list ,so discard the old one. :-) 
         clear_rfids_from_eeprom();
@@ -223,8 +274,10 @@ bool handleHTTPusers() {
 
           unsigned long ul = convert_to_ulong(first_line); 
           if ( ul == 0 ) {  
-            Serial.print("ulong conversion failed, sorry for: "); Serial.println(first_line); 
-            toclient += "ulong conversion failed, sorry for: ";  toclient += first_line; toclient += "<br>\n";  
+            if ( ! first_line.startsWith("secret:") ) {  // we know this line isn't a ulong, ignore it here.
+              Serial.print("ulong conversion failed, sorry for: "); Serial.println(first_line); 
+              toclient += "ulong conversion failed, sorry for: ";  toclient += first_line; toclient += "<br>\n";  
+            }
           } 
          
           remainder = remainder.substring(find_nl+1);  // get the rest. to the end of the string.
@@ -477,7 +530,9 @@ int remote_server_says_yes( unsigned long tag, unsigned long int door, char *nam
 
     Serial.println(F("http client connected"));
     
-    client.print("GET /logger.php?secret=XXXXXXXX&q=");
+    client.print("GET /logger.php?secret="); 
+    client.print(programmed_secret);
+    client.print("&q=");
     client.print(tag);
     client.print("&d=");
     client.print(door);

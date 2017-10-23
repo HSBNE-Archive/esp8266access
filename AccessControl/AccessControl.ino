@@ -66,6 +66,10 @@ byte rfidreadbytes[12];
 // remote web server
 const char* host = "192.168.192.55";
 const int httpPort = 80;
+unsigned long lastConnectionTime = 0; // most recent time we had any comms on the http/wifi interface. 
+unsigned long lastAttemptTime = 0; // most recent time we tried to have any comms on the http/wifi interface. 
+unsigned long pollingInterval = 60;        // maximum 60 secs between network checks, in seconds. Also, being offline for 5 in a row ( 5 mins ) of these causes a hard reboot.
+
 
 //// unused at present.
 //#ifdef OTHERUDP
@@ -255,7 +259,6 @@ bool handleHTTPusers() {
         //x.stop();
 
 
-
 }
 
 
@@ -439,17 +442,20 @@ void card_ok_entry_denied() {
     } 
 }
 
-
-bool remote_server_says_yes( unsigned long tag, unsigned long int door, char *name ) { 
+// returns -1 on unhandled error, 0 if remote server denies it, and 1 if remote server permits it.
+int remote_server_says_yes( unsigned long tag, unsigned long int door, char *name ) { 
 
     Serial.print("Connecting to ");
     Serial.println(host);
-    
+
+    lastAttemptTime = millis(); // tell the network-checker code we just ATTEMPTED  a network check,
+
+
     // Use WiFiClient class to create TCP connections
     WiFiClient client;
     if (!client.connect(host, httpPort)) {
       Serial.println("http outbound connection failed");
-      return false;
+      return -1;
     }
 
     Serial.println(F("http client connected"));
@@ -470,17 +476,24 @@ bool remote_server_says_yes( unsigned long tag, unsigned long int door, char *na
         if (millis() - timeout > 2000) {
           Serial.println(">>> Client Timeout !");
           client.stop();
-          return false;
+          return -1;
         }
       }
+
       
       // Read all the lines of the reply from server and print them to Serial
       while(client.available()){
         String line = client.readStringUntil('\r');
         Serial.print(line);
         if (line.startsWith("access:1") ) { 
-            Serial.println("permission granted by remote server");
-           return true; 
+            Serial.println("permission GRANTED by remote server");
+            lastConnectionTime = millis(); // tell the network-checker code we just SUCCEEDED  a network check
+           return 1; 
+        }
+        if (line.startsWith("access:0") ) { 
+            Serial.println("permission DENIED by remote server");
+            lastConnectionTime = millis(); // tell the network-checker code we just SUCCEEDED  a network check
+           return 0; 
         }
       }
       Serial.println();
@@ -488,7 +501,7 @@ bool remote_server_says_yes( unsigned long tag, unsigned long int door, char *na
       
       client.stop();
     
-    return false;
+      return -1; // shouldn't get here, but if we do, consider it an error as we didn't get a suitable response from the server. 
 }
 
 
@@ -528,7 +541,7 @@ bool rfid_is_valid() {
     if ( found_in_eeprom ) return true; 
 
     // check if remote server sats it's good..? 
-    if ( remote_server_says_yes(rfid_tag,42,"buzztest") ) { 
+    if ( remote_server_says_yes(rfid_tag,42,"buzztest")  == 1 ) { 
         Serial.println("remote server approved tag -OK-.");
         tagcache.rfid_tag = rfid_tag;
         
@@ -675,6 +688,29 @@ void loop() {
     interruptCounter = 0;
   }
   #endif
+
+  //unsigned long most_recent_time = lastConnectionTime > lastAttemptTime ? lastConnectionTime : lastAttemptTime;
+
+  // we re-attempt things approx every minute 
+  if ((unsigned long)(millis() - lastAttemptTime) > (unsigned long)(pollingInterval*1000) ) {
+     Serial.println(F("network poll checking now.... "));
+
+     unsigned long test_code = 1234567890;
+    if ( remote_server_says_yes(test_code,42,"buzztest") >= 0  ) {   // in thise case, if the server permits OR denies, both are valid comms with the server.
+        Serial.println("....remote server COMMS TEST tag OK.");
+        // lastConnectionTime is also updated inside the above function call, so we don't need to do it here. 
+    } 
+    
+  }
+  // if we go more than 5 minutes without an actual link, reboot! 
+  // now do something extreme if we go for 5 minutes without hearing from the server:  ( ie 5 times the polling interval )
+  if ((unsigned long)(millis() - lastConnectionTime) > (unsigned long)(pollingInterval*1000*5) ) {
+    Serial.println("Rebooting becuase network was offline for more than 5 minutes.");
+    Serial.flush();
+    delay(5);
+    ESP.restart(); //this hangs the first time after a device was serial programmed.
+  }
+
 
   // this little loop relies on the serial RFIS data getting into our serial buffer smartly, so it's all there before our delay(2) runs out.
   while ( readerSerial.available() ) { 

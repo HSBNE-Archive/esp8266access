@@ -417,12 +417,13 @@ void setup() {
         //NOTE: NTP is not started here, it's started as soon as the wifi interface is "up", but it could have probably been.
 
 //        #ifdef OTHERUDP
-//        // we listen, all the time, for UDP data coming IN.
+//        // we listen, all the time, for UDP data coming IN. ( Waiting for UDP on 5554 )
 //        Udp.begin(navPort); //Open port for navdata
 //        Udp.flush();
 //        #endif
+          
         
-        Serial.println("Starting main loop ( Waiting for UDP on 5554 ) "); // see PPMOUTPIN
+        Serial.println("Starting main loop  "); 
 
 }
 

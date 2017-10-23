@@ -336,8 +336,7 @@ void CheckFlashConfig() {
     FlashMode_t ideMode = ESP.getFlashChipMode();
 
     Serial.printf("Flash real id:   %08X\n", ESP.getFlashChipId());
-    Serial.printf("Flash real size: %u\n\n", realSize);
-
+    Serial.printf("Flash real size: %u\n", realSize);
     Serial.printf("Flash ide  size: %u\n", ideSize);
     Serial.printf("Flash ide speed: %u\n", ESP.getFlashChipSpeed());
     Serial.printf("Flash ide mode:  %s\n", (ideMode == FM_QIO ? "QIO" : ideMode == FM_QOUT ? "QOUT" : ideMode == FM_DIO ? "DIO" : ideMode == FM_DOUT ? "DOUT" : "UNKNOWN"));
@@ -754,6 +753,8 @@ void clear_rfids_from_eeprom() {
     EEPROM.commit(); // yes, I really want it to persist. 
 }
 
+int heap = 0;
+int prevheap = 0;
 
 void loop() {
   //Serial.println("loop");
@@ -761,6 +762,13 @@ void loop() {
    HTTP.handleClient(); // http server requests need handling... 
 
    timeClient.update(); // NTP packets   for current time do this:   Serial.println(timeClient.getFormattedTime());
+
+   // heap diagnostics
+   heap = ESP.getFreeHeap();
+   if ( abs(heap - prevheap) > 100) {  // allow small movements without reporting.
+     Serial.printf("free heap size: %u\n", heap);
+     prevheap = heap;
+   }
 
   #ifdef ENABLE_ESTOP_AS_EGRESS_BUTTON
   if ( interruptCounter  > 0 ) { 

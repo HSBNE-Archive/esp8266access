@@ -374,6 +374,16 @@ void handleInterrupt() {
   interruptCounter++;
 }
 
+// with software PWM, and vals in range 0-1023
+void green_on() { analogWrite(GREEN_ONBOARD_LED, 0 ); }  // it's an inverted logic LED 0 = ON
+void green_half() { analogWrite(GREEN_ONBOARD_LED, 512 ); }
+void green_off() { analogWrite(GREEN_ONBOARD_LED, 1024 ); }  //1024 = OFF
+
+// well, since millis() is 1000 in a second, and we need approx 1024 intervals for the brightness 
+// we'll naturally get a 5hz cycle  at %5000 or heartbeat or pulse, we'll need to call this constantly in the main loop.
+//the /2 makes it darker ,the 1024- puts it at the darker end of the spectrum as this LED is wired HIGH=OFF
+void green_pulse() { int m =  millis()%5000; int d = m > 2500?1:-1; int brightness = m/5*d; analogWrite(GREEN_ONBOARD_LED, brightness ); }
+
 
 void setup() {
         Serial.begin(19200);
@@ -386,7 +396,6 @@ void setup() {
         pinMode(GREEN_ONBOARD_LED, OUTPUT);     // Initialize the  pin as an output
         pinMode(RELAY_ONBOARD, OUTPUT);     // Initialize the pin as an output
         pinMode(interruptPin, INPUT_PULLUP); // pushbutton on GPIO0
-
         
         attachInterrupt(digitalPinToInterrupt(interruptPin), handleInterrupt, FALLING);
 
@@ -426,7 +435,8 @@ void setup() {
           Serial.println(".....");
           delay(200);
           tries++;
-          digitalWrite(GREEN_ONBOARD_LED, !digitalRead(GREEN_ONBOARD_LED) ); 
+          if ( tries %2 ==  0 ) { green_off(); } else { green_on(); } 
+          //digitalWrite(GREEN_ONBOARD_LED, !digitalRead(GREEN_ONBOARD_LED) ); 
         }
         //WIFI fail
         if (tries >= 30 ) {  
@@ -442,8 +452,8 @@ void setup() {
         Serial.print("STA IP address: ");
         Serial.println(myIP);
         
-        digitalWrite(GREEN_ONBOARD_LED, LOW);
-
+        //digitalWrite(GREEN_ONBOARD_LED, LOW);
+        green_on();
 
         #ifdef OTA
 
@@ -506,16 +516,20 @@ void setup() {
 
 void card_ok_entry_permitted() { 
     digitalWrite(RELAY_ONBOARD, HIGH);
-    digitalWrite(GREEN_ONBOARD_LED, HIGH); // LOW = ON for this LED, so turns green led OFF while door is OPEN. TODO maybe flash fast = good? ..? 
+    green_on();
+    delay(50);
+    //digitalWrite(GREEN_ONBOARD_LED, HIGH); // LOW = ON for this LED, so turns green led OFF while door is OPEN. TODO maybe flash fast = good? ..? 
     // it gets pulled low elsewhere after some delay.
 }
 
 // fast-flash-30-times for denied. ( thats ~3 secs ) 
 void card_ok_entry_denied() { 
     for ( int x = 0 ; x < 30 ; x++ ) { 
-    digitalWrite(GREEN_ONBOARD_LED, HIGH);
+    //digitalWrite(GREEN_ONBOARD_LED, HIGH);
+    green_off();
     delay(50);
-    digitalWrite(GREEN_ONBOARD_LED, LOW);
+    //digitalWrite(GREEN_ONBOARD_LED, LOW);
+    green_on();
     delay(50);
     } 
 }
@@ -778,6 +792,8 @@ void loop() {
   }
   #endif
 
+  green_pulse(); // show heartbeat on LED when we do nothing else.
+
   //unsigned long most_recent_time = lastConnectionTime > lastAttemptTime ? lastConnectionTime : lastAttemptTime;
 
   // we re-attempt things approx every minute 
@@ -844,7 +860,8 @@ void loop() {
       Serial.println(eot); 
 
        // tell user we got some sort of "scan" as early in the process as we can...
-       digitalWrite(GREEN_ONBOARD_LED, HIGH); // for this LED , HIGH = off, but it's on most of the time, so turning it OFF here works.
+       //digitalWrite(GREEN_ONBOARD_LED, HIGH); // for this LED , HIGH = off, but it's on most of the time, so turning it OFF here works.
+       green_on();
       
       if ( rfid_is_valid() ) { 
         Serial.println("...Permitted entry.");
@@ -878,7 +895,8 @@ void loop() {
         Serial.println("RELOCKED-DOOR");
     
         // set the LED with the ledState of the variable:
-        digitalWrite(13, LOW); // LED
+        //digitalWrite(13, LOW); // LED
+        green_off();
         digitalWrite(12, LOW); // and RELAY
 
         previousMillis = 0;

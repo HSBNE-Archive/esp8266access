@@ -172,7 +172,16 @@ String get_nice_date_from_epoch(unsigned long now_epoch_secs) {
         Str_now += MonthStr;Str_now += "/";
          String DayStr = Day < 10 ? "0" + String(Day) : String(Day);        
         Str_now += DayStr;Str_now += "-";
-        Str_now += timeClient.getFormattedTime(); // properly HH:MM:SS formatted
+        unsigned long hours = (now_epoch_secs % 86400L) / 3600;
+        String hoursStr = hours < 10 ? "0" + String(hours) : String(hours);
+        unsigned long minutes = (now_epoch_secs % 3600) / 60;
+        String minuteStr = minutes < 10 ? "0" + String(minutes) : String(minutes);
+        unsigned long seconds = now_epoch_secs % 60;
+        String secondStr = seconds < 10 ? "0" + String(seconds) : String(seconds);
+        Str_now +=  hoursStr; Str_now += ":";
+        Str_now +=  minuteStr; Str_now += ":";
+        Str_now +=  secondStr; 
+        
         Str_now += "<br>\n";
 
         return Str_now;

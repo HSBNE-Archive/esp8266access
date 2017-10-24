@@ -47,14 +47,14 @@ ESP8266WebServer HTTP(80);
 IPAddress myIP; // us, once we know it.
 
 //  a client of this TX wifi network:
-const char *ssid = "HSBNEWIFI";
 const char *password = "xxxxxxxxxxxxx";
+const char *ssid = "HSBNEWiFi";
 
 // static IP address assigment, gateway, and netmask.
-char * Cipa = "192.168.192.75";
-char * Cgate = "192.168.192.1";
+char * Cipa = "10.0.1.220";
+char * Cgate = "10.0.1.254";
 char * Csubnetmask = "255.255.254.0";
-char * deviceName = "buzztest";
+String deviceName = "MembersStorage";
 
 int next_empty_slot = -1; 
 
@@ -69,7 +69,7 @@ int eot = 0; // position of most recentkly read byte in rfidreadbytes structure,
 byte rfidreadbytes[12];
 
 // remote web server
-const char* host = "192.168.192.55";
+const char* host = "10.0.1.253";
 const int httpPort = 80;
 unsigned long lastConnectionTime = 0; // most recent time we had any comms on the http/wifi interface. 
 unsigned long lastAttemptTime = 0; // most recent time we tried to have any comms on the http/wifi interface. 
@@ -86,7 +86,7 @@ unsigned long pollingInterval = 60;        // maximum 60 secs between network ch
 
 unsigned long previousMillis = 0;        // will store last time LED/relay was updated
 
-const long interval = 2000; // how long it's OPEN for..
+const long interval = 4000; // how long it's OPEN for..
 
 int ledState = LOW; 
 
@@ -419,7 +419,7 @@ void setup() {
         IPAddress gate;  gate.fromString(Cgate);
         IPAddress subnetmask; subnetmask.fromString(Csubnetmask);
         
-        WiFi.hostname(deviceName);      // DHCP Hostname (useful for finding device for static lease)
+        WiFi.hostname(deviceName.c_str());      // DHCP Hostname (useful for finding device for static lease)
         WiFi.config(ipa, gate, subnetmask);  // (DNS not required)
         WiFi.begin(ssid, password);
 
@@ -535,7 +535,7 @@ void card_ok_entry_denied() {
 }
 
 // returns -1 on unhandled error, 0 if remote server denies it, and 1 if remote server permits it.
-int remote_server_says_yes( unsigned long tag, unsigned long int door, char *name ) { 
+int remote_server_says_yes( unsigned long tag, unsigned long int door, String name ) { 
 
     Serial.print("Connecting to ");
     Serial.println(host);
@@ -559,7 +559,7 @@ int remote_server_says_yes( unsigned long tag, unsigned long int door, char *nam
     client.print("&d=");
     client.print(door);
     client.print("&n=");
-    client.println(*name);
+    client.println(name);
     client.println();
 
     // delay some arbitrary amount for the server to respond to the client. say, 1 sec. ?

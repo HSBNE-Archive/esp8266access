@@ -9,6 +9,12 @@
 #include <NTPClient.h>             // installed using library manager and searching for 'ntp'. https://github.com/arduino-libraries/NTPClient 
 #include "EEPROMAnything.h"
 
+//#define USE_NEOPIXELS 1
+#ifdef USE_NEOPIXELS
+#include <Adafruit_NeoPixel.h>
+Adafruit_NeoPixel NEO = Adafruit_NeoPixel(1, 14, NEO_RGB + NEO_KHZ800);
+#endif
+
 #define USE_OTA 1
 #ifdef USE_OTA
 #include <ArduinoOTA.h>
@@ -399,6 +405,11 @@ void setup() {
         
         attachInterrupt(digitalPinToInterrupt(interruptPin), handleInterrupt, FALLING);
 
+        #ifdef USE_NEOPIXELS
+        NEO.begin(); // optional RGB led/s. 
+        statusLight('b'); // blue on bootup till we have a wifi signal
+        #endif
+
         // epprom has rfid tags cached.
         EEPROM.begin(EEPROM_SIZE); // any number up to 4096.  don't forget EEPROM.commit() after EEPROM.write()
 
@@ -454,6 +465,9 @@ void setup() {
         
         //digitalWrite(GREEN_ONBOARD_LED, LOW);
         green_on();
+        #ifdef USE_NEOPIXELS
+        statusLight('r'); // NEO goes blue->red after wifi is connected.
+        #endif
 
         #ifdef USE_OTA
 
@@ -961,4 +975,33 @@ void GetDateTimeFromUnix( uint32_t unix) {
     Month++;            /* Month starts with 1 */
     Day = unix + 1;     /* Date starts with 1 */
 }
+
+#ifdef USE_NEOPIXELS
+char statusLight(char color) {
+  switch (color) {
+    case 'r':
+      {
+        NEO.setPixelColor(0, 250, 0, 0);
+        break;
+      }
+    case 'g':
+      {
+        NEO.setPixelColor(0, 0, 250, 0);
+        break;
+      }
+    case 'b':
+      {
+        NEO.setPixelColor(0, 0, 0, 250);
+        break;
+      }
+    case 'y':
+      {
+        NEO.setPixelColor(0, 255, 100, 0);
+        break;
+      }
+  }
+  NEO.show();
+}
+
+#endif
 

@@ -9,8 +9,8 @@
 #include <NTPClient.h>             // installed using library manager and searching for 'ntp'. https://github.com/arduino-libraries/NTPClient 
 #include "EEPROMAnything.h"
 
-#define OTA 0
-#ifdef OTA
+#define USE_OTA 1
+#ifdef USE_OTA
 #include <ArduinoOTA.h>
 #endif
 
@@ -455,14 +455,14 @@ void setup() {
         //digitalWrite(GREEN_ONBOARD_LED, LOW);
         green_on();
 
-        #ifdef OTA
+        #ifdef USE_OTA
 
             Serial.println("OTA ACTIVE!");
             // Port defaults to 8266
             // ArduinoOTA.setPort(8266);
           
-            // Hostname defaults to esp8266-[ChipID]
-            // ArduinoOTA.setHostname("myesp8266");
+            // Hostname defaults to esp8266-[ChipID], we set it to the access control name
+            ArduinoOTA.setHostname(deviceName.c_str());
           
             // No authentication by default
             //ArduinoOTA.setPassword((const char *)"admin");
@@ -488,7 +488,7 @@ void setup() {
             Serial.println("Ready");
             Serial.print("IP address: ");
             Serial.println(WiFi.localIP());
-        #endif // OTA
+        #endif // USE_OTA
 
 
           // be a HTTP server:  - not totally critical for this, but it's working, so we might use it later for config.
@@ -776,6 +776,8 @@ void loop() {
    HTTP.handleClient(); // http server requests need handling... 
 
    timeClient.update(); // NTP packets   for current time do this:   Serial.println(timeClient.getFormattedTime());
+
+    ArduinoOTA.handle(); // this should allow us to OTA-update this device.
 
    // heap diagnostics
    heap = ESP.getFreeHeap();

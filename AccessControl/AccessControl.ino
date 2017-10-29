@@ -644,10 +644,18 @@ int remote_server_says_yes( unsigned long tag, unsigned long int door, String na
 
 
 // to be valid, its got to be in either the onboard eeprom cache, OR the remove server had to respond with 'access:1'
-bool rfid_is_valid() { 
+// return values:   -1 means denied entry ,  +1 means permitted by local eeprom cache, +2 means permitted by remote server
+ unsigned long typed_rfid_tag = 0;
+
+int rfid_is_valid(int tagtype) {   // tagtypes either 5 or 12  
 // rfidreadbytes[] global stored the last-read RFID tag.
 
+    typed_rfid_tag = 0;
 
+    if (( tagtype != 5 ) && ( tagtype != 12 )) { 
+      Serial.println("rfid_is_valid() says tagtype is incorrect.");
+      return -1;
+    }
     // convert raw bytes into the "long" we have in eeprom: ( ignoring the checksum for now. ) 
     unsigned long rfid_tag = 0;
     //rfid_tag = 0;
@@ -657,14 +665,21 @@ bool rfid_is_valid() {
     rfid_tag += rfidreadbytes[3];
     
 
-    Serial.println("looking for tag (as bytes): ");
+    Serial.println("looking for tag (as DEC bytes): ");
     for(int i = 0; i < eot ; i++)
     {
       Serial.print(" ");
-      Serial.print(rfidreadbytes[i]);
+      Serial.print(rfidreadbytes[i],DEC);
     }
-      Serial.print(" (as long):");
-      Serial.print(rfid_tag);
+    Serial.println("\nlooking for tag (as HEX bytes): ");
+    for(int i = 0; i < eot ; i++)
+    {
+      Serial.print(" ");
+      Serial.print(rfidreadbytes[i],HEX);
+    }
+
+      Serial.print("\n looking at it (as long):");
+      Serial.print(typed_rfid_tag);
       Serial.println();
 
 
@@ -675,22 +690,26 @@ bool rfid_is_valid() {
     display_tags_in_eeprom(); 
 
     // quietly scan for tag now
-    bool found_in_eeprom = find_requested_tag_in_eeprom(rfid_tag);
-    if ( found_in_eeprom ) return true; 
+    bool found_in_eeprom = find_requested_tag_in_eeprom(typed_rfid_tag);
+    if ( found_in_eeprom ) {
+      return 1; 
+    }
+    // TODO, at some point after returning 'true' on the above line, we should still do a http request to the server to log the event
+    // but we don't do it here so we don't hold-up the user getting in the door quickly.
 
     // check if remote server sats it's good..? 
-    if ( remote_server_says_yes(rfid_tag,42,deviceName)  == 1 ) { 
+    if ( remote_server_says_yes(typed_rfid_tag,42,deviceName)  == 1 ) { 
         Serial.println("remote server approved tag -OK-.");
-        tagcache.rfid_tag = rfid_tag;
+        tagcache.rfid_tag = typed_rfid_tag;
         
         if ( found_in_eeprom == false ) {  // precaution: don't write it more than once to the eeprom
           cache_rfid( next_empty_slot,tagcache ) ;    
           next_empty_slot = -1; // forget the previously known offset, we don't wnat to point ot eh wrong place.
         }
-        return true; 
+        return 2; 
     }
 
-  return false;
+  return -1;
 } 
 
 

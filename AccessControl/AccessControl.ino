@@ -611,7 +611,7 @@ int remote_server_says_yes( unsigned long tag, unsigned long int door, String na
     // wait at most 2000ms for some data from client, don't wait that long if we din't have to.
     unsigned long timeout = millis();
       while (client.available() == 0) {
-        if (millis() - timeout > 2000) {
+        if (millis() - timeout > 3000) { // 2000 is a bit quick for the server unless it's primed by a recent call, so 3000 is better.
           Serial.println(">>> Client Timeout !");
           client.stop();
           return -1;

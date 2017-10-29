@@ -24,6 +24,13 @@ Adafruit_NeoPixel NEO = Adafruit_NeoPixel(1, 14, NEO_RGB + NEO_KHZ800);
 #define GREEN_ONBOARD_LED 13
 #define RELAY_ONBOARD 12
 
+// THREE external LEDS  GREEN-WHITE-RED   , where the green and red are GPIO connected, and the "white" is just a power indicator.
+ // GPIO4 =  lowest pin on box , yellow wire inside.
+ // GPIO5 =  2nd from the end, next to 4.  
+#define GREEN_EXTERNAL_LED 5
+//#define WHITE_LED , always powered on.
+#define RED_LED 4
+
 #define EEPROM_SIZE 1024
 #define MEMORY_HEADER_LEN 100
 #define MEMORY_RFID_LENGTH 4
@@ -381,14 +388,21 @@ void handleInterrupt() {
 }
 
 // with software PWM, and vals in range 0-1023
-void green_on() { analogWrite(GREEN_ONBOARD_LED, 0 ); }  // it's an inverted logic LED 0 = ON
-void green_half() { analogWrite(GREEN_ONBOARD_LED, 512 ); }
-void green_off() { analogWrite(GREEN_ONBOARD_LED, 1024 ); }  //1024 = OFF
+void internal_green_on() { analogWrite(GREEN_ONBOARD_LED, 0 ); }  // it's an inverted logic LED 0 = ON
+void internal_green_half() { analogWrite(GREEN_ONBOARD_LED, 512 ); }
+void internal_green_off() { analogWrite(GREEN_ONBOARD_LED, 1024 ); }  //1024 = OFF
+
+void red_on() { digitalWrite(RED_LED, 1 ); }  
+void red_off() { digitalWrite(RED_LED, 0 ); }  
+void external_green_on() { digitalWrite(GREEN_EXTERNAL_LED, 1 ); }  
+void external_green_off() { digitalWrite(GREEN_EXTERNAL_LED, 0 ); }  
 
 // well, since millis() is 1000 in a second, and we need approx 1024 intervals for the brightness 
 // we'll naturally get a 5hz cycle  at %5000 or heartbeat or pulse, we'll need to call this constantly in the main loop.
 //the /2 makes it darker ,the 1024- puts it at the darker end of the spectrum as this LED is wired HIGH=OFF
-void green_pulse() { int m =  millis()%5000; int d = m > 2500?1:-1; int brightness = m/5*d; analogWrite(GREEN_ONBOARD_LED, brightness ); }
+void internal_green_pulse() { int m =  millis()%5000; int d = m > 2500?1:-1; int brightness = m/5*d; analogWrite(GREEN_ONBOARD_LED, brightness ); }
+// different to green, as is a digial , not a PWM
+//void eternal_green_pulse() { int m =  millis()%2000; int d = m > 1000?1:1; digitalWrite(GREEN_EXTERNAL_LED, d ); }
 
 
 void setup() {
@@ -400,6 +414,15 @@ void setup() {
 
         // LED and relay
         pinMode(GREEN_ONBOARD_LED, OUTPUT);     // Initialize the  pin as an output
+        pinMode(RED_LED, OUTPUT);     // Initialize the  pin as an output
+        pinMode(GREEN_EXTERNAL_LED, OUTPUT);     // Initialize the  pin as an output
+
+        //set initial LED state/s to off
+        digitalWrite(RED_LED, LOW);   // Turn the LED on (Note that LOW is the voltage level
+        digitalWrite(GREEN_EXTERNAL_LED, LOW);   // Turn the LED on (Note that LOW is the voltage level
+        digitalWrite(GREEN_ONBOARD_LED, HIGH);   // Turn the LED on (Note that LOW is the voltage level
+
+
         pinMode(RELAY_ONBOARD, OUTPUT);     // Initialize the pin as an output
         pinMode(interruptPin, INPUT_PULLUP); // pushbutton on GPIO0
         
@@ -446,7 +469,7 @@ void setup() {
           Serial.println(".....");
           delay(200);
           tries++;
-          if ( tries %2 ==  0 ) { green_off(); } else { green_on(); } 
+          if ( tries %2 ==  0 ) { external_green_off();  internal_green_off(); red_off();  } else { external_green_on();  internal_green_on(); red_on();  } 
           //digitalWrite(GREEN_ONBOARD_LED, !digitalRead(GREEN_ONBOARD_LED) ); 
         }
         //WIFI fail
@@ -462,9 +485,10 @@ void setup() {
         myIP = WiFi.localIP();
         Serial.print("STA IP address: ");
         Serial.println(myIP);
+
+        // after wifi is setup, default it to this: 
+        external_green_off(); red_off(); internal_green_on();
         
-        //digitalWrite(GREEN_ONBOARD_LED, LOW);
-        green_on();
         #ifdef USE_NEOPIXELS
         statusLight('r'); // NEO goes blue->red after wifi is connected.
         #endif
@@ -529,8 +553,10 @@ void setup() {
 }
 
 void card_ok_entry_permitted() { 
-    digitalWrite(RELAY_ONBOARD, HIGH);
-    green_on();
+    digitalWrite(RELAY_ONBOARD, RELAY_UNLOCK);
+    external_green_on();
+    internal_green_on();
+    red_off();
     delay(50);
     //digitalWrite(GREEN_ONBOARD_LED, HIGH); // LOW = ON for this LED, so turns green led OFF while door is OPEN. TODO maybe flash fast = good? ..? 
     // it gets pulled low elsewhere after some delay.
@@ -538,14 +564,16 @@ void card_ok_entry_permitted() {
 
 // fast-flash-30-times for denied. ( thats ~3 secs ) 
 void card_ok_entry_denied() { 
+
     for ( int x = 0 ; x < 30 ; x++ ) { 
     //digitalWrite(GREEN_ONBOARD_LED, HIGH);
-    green_off();
+    red_off();
     delay(50);
     //digitalWrite(GREEN_ONBOARD_LED, LOW);
-    green_on();
+    red_on();
     delay(50);
     } 
+    red_off();
 }
 
 // returns -1 on unhandled error, 0 if remote server denies it, and 1 if remote server permits it.
@@ -808,7 +836,8 @@ void loop() {
   }
   #endif
 
-  green_pulse(); // show heartbeat on LED when we do nothing else.
+
+  internal_green_pulse(); // show heartbeat on internal LED when we do nothing else.
 
   //unsigned long most_recent_time = lastConnectionTime > lastAttemptTime ? lastConnectionTime : lastAttemptTime;
 
@@ -877,16 +906,18 @@ void loop() {
 
        // tell user we got some sort of "scan" as early in the process as we can...
        //digitalWrite(GREEN_ONBOARD_LED, HIGH); // for this LED , HIGH = off, but it's on most of the time, so turning it OFF here works.
-       green_on();
+       external_green_on(); 
       
       if ( rfid_is_valid() ) { 
         Serial.println("...Permitted entry.");
         // open the door and show user other signs ass approriate.
         card_ok_entry_permitted();
+        internal_green_on();
       } else { 
         Serial.println("...Denied entry.");
         // warn user that they have been denied entry
         card_ok_entry_denied();
+        red_on();
       }
 
       previousMillis = millis(); // this is the time we turned it on. 
@@ -912,8 +943,10 @@ void loop() {
     
         // set the LED with the ledState of the variable:
         //digitalWrite(13, LOW); // LED
-        green_off();
         digitalWrite(12, LOW); // and RELAY
+        internal_green_off();
+        external_green_off();
+        red_off();
 
         previousMillis = 0;
         

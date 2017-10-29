@@ -81,7 +81,7 @@ struct config_t
 
 int eot = 0; // position of most recentkly read byte in rfidreadbytes structure, so repreenting the 'end of tag' in the array.
 
-byte rfidreadbytes[12];
+byte rfidreadbytes[14];
 
 // remote web server
 const char* host = "10.0.1.253";
@@ -643,6 +643,25 @@ int remote_server_says_yes( unsigned long tag, unsigned long int door, String na
 }
 
 
+
+// zero padded binary print
+void printBinary(byte inByte)
+{
+  for (int b = 7; b >= 0; b--)
+  {
+    Serial.print(bitRead(inByte, b));
+  }
+}
+
+// zero padded binary print of lower 1/2 
+void printlower4Binary(byte inByte)
+{
+  for (int b = 3; b >= 0; b--)
+  {
+    Serial.print(bitRead(inByte, b));
+  }
+}
+
 // to be valid, its got to be in either the onboard eeprom cache, OR the remove server had to respond with 'access:1'
 // return values:   -1 means denied entry ,  +1 means permitted by local eeprom cache, +2 means permitted by remote server
  unsigned long typed_rfid_tag = 0;
@@ -656,13 +675,125 @@ int rfid_is_valid(int tagtype) {   // tagtypes either 5 or 12
       Serial.println("rfid_is_valid() says tagtype is incorrect.");
       return -1;
     }
+
+    if ( tagtype == 5 ) { 
     // convert raw bytes into the "long" we have in eeprom: ( ignoring the checksum for now. ) 
-    unsigned long rfid_tag = 0;
-    //rfid_tag = 0;
-    rfid_tag += rfidreadbytes[0] << 24;
-    rfid_tag += rfidreadbytes[1] << 16;
-    rfid_tag += rfidreadbytes[2] << 8;
-    rfid_tag += rfidreadbytes[3];
+    //typed_rfid_tag = 0;
+    typed_rfid_tag += rfidreadbytes[0] << 24;
+    typed_rfid_tag += rfidreadbytes[1] << 16;
+    typed_rfid_tag += rfidreadbytes[2] << 8;
+    typed_rfid_tag += rfidreadbytes[3];
+    }
+
+    if ( tagtype == 12 ) { 
+
+            // ID completely read
+            byte checksum = 0;
+            byte value = 0;
+            String id = "";
+
+            Serial.print("AS RAW BINARY: "); 
+            for (int p = 0 ; p < 12 ; p++ ) { 
+              id += ( char)rfidreadbytes[p];
+               Serial.print(" ");    printBinary(rfidreadbytes[p]); // Serial.print(rfidreadbytes[p],BIN);
+            }
+            Serial.println(); 
+
+            Serial.print("AS FIXED BINARY: "); 
+            for (int p = 1 ; p < 9 ; p++ ) {  //offsets 1-8 is the interesting ones.
+
+               byte b = rfidreadbytes[p];
+               byte righthalf = b & 15 ;
+               byte lefthalf = b >> 4 ;
+               if ( lefthalf == 3  ) { // 3 = 0011 
+               //printlower4Binary(lefthalf); Serial.print(" ");
+                  printlower4Binary(righthalf);Serial.print(" ");
+               } 
+               if ( lefthalf == 4 ) {   // 0100
+                  printlower4Binary(rfidreadbytes[10]);Serial.print(" ");
+               }
+               else Serial.print("XXXX ");
+               
+               //Serial.print(" "); //  printlower4Binary(rfidreadbytes[p]); // Serial.print(rfidreadbytes[p],BIN);
+            }
+            Serial.println(); 
+
+            // https://efxa.org/2013/05/23/simple-function-implementation-for-parsing-rfid-tags-in-arduino/
+            Serial.print("AS ASCII CHARS REPRESENTING HEX : "); 
+           for (int p = 1 ; p < 9 ; p++ ) {  //offsets 1-8 is the interesting ones.
+
+            // acceptable values are: ascii 0-9 and ascii A-F   ie '0'-'9' and 'A'-'F'  
+            // '0'-'9'  => hex: 0x30-0x39 / dec: 48-57 
+            // 'A'-'F'  => hex: 0x41-0x46 / dec: 65-70 
+
+                // value
+               byte v = rfidreadbytes[p];
+
+               if ( (v < 48) ||  (v > 70 ) || ( (v>57) && (v<65)  ) ) { 
+                 Serial.print("SORRY INVALID ASCII-AS-HEX char.  dec:");  Serial.print(v,DEC); Serial.print(" hex:"); Serial.println(v, HEX);
+               }
+
+                // convert hex tag ID.
+                if ((v >= '0') && (v <= '9'))
+                  v = v - '0';
+                else if ((v >= 'A') && (v <= 'F'))
+                  v = 10 + v - 'A';
+
+
+              Serial.print("AS NUM. dec:"); Serial.print(v,DEC); Serial.print(" hex:"); Serial.println(v, HEX);
+                  
+
+           }
+           Serial.println(); 
+
+
+//            Serial.print("AS BINARY3: ");
+//            printlower4Binary(rfidreadbytes[1]);Serial.print(" "); 
+//            printlower4Binary(rfidreadbytes[2]);Serial.print(" "); 
+//            printlower4Binary(rfidreadbytes[3]);Serial.print(" "); 
+//            printlower4Binary(rfidreadbytes[4]);Serial.print(" "); 
+//            
+//            printlower4Binary(rfidreadbytes[5]);Serial.print(" "); 
+//            printlower4Binary(rfidreadbytes[6]);Serial.print(" "); 
+//            printlower4Binary(rfidreadbytes[7]);Serial.print(" "); 
+//            printlower4Binary(rfidreadbytes[8]);
+
+             Serial.println(); 
+
+
+            Serial.print("AS STRING: ");  Serial.println(id);
+
+            String middle = id.substring(4,10);
+
+            Serial.print("AS MIDDLE STRING: ");  Serial.println(middle);
+            
+            int mfr = strtol ( id.substring(0,4).c_str(), NULL, 16 );
+            long tag  = strtol ( middle.c_str(), NULL, 16 );
+            byte chk = strtol ( id.substring(10,12).c_str(), NULL, 16 );
+
+            Serial.print("AS LONG: ");  Serial.println(tag);
+
+            Serial.print("AS BINARY: ");  Serial.println(tag,BIN);
+
+
+            // Do checksum calculation
+            int i2;   
+            for(int i = 0; i < 5; i++) {
+              i2 = 2*i;
+              //checksum ^= hex2dec(id.substring(i2,i2+2));
+            }
+        //#ifdef DEBUG
+            Serial.println("VERIFICATION");
+            Serial.print("  ID:\t");
+            Serial.println(tag);
+            //Serial.print("  CHK:\t");
+            //Serial.println(checksum, HEX);
+        //#endif    
+            if (checksum == chk) {
+              Serial.println("VALID tag, chksum ok.");
+            }
+        
+    }
     
 
     Serial.println("looking for tag (as DEC bytes): ");
@@ -928,12 +1059,37 @@ void loop() {
        // tell user we got some sort of "scan" as early in the process as we can...
        //digitalWrite(GREEN_ONBOARD_LED, HIGH); // for this LED , HIGH = off, but it's on most of the time, so turning it OFF here works.
        external_green_on(); 
+
+      int tagtype = 0;
+      // "RAW" RFID TAGS emit exactly 5 bytes, ( LIKE THE ONES RESIN-POTTED BY BUZZ )
+      // simple 4+1 byte tags.
+      if ( eot ==5 ) {  
+        Serial.println("RAW ( 5 byte ) Tag Detected");
+        tagtype = 5;
+        }
       
-      if ( rfid_is_valid() ) { 
+      //MANUFACTURER "POTTED", ie beige-front, black-resin back, emit 12 bytes..
+      // starts with STX byte ( 0x02 ) , ends with ETX byte ( 0x03 )
+      if ( ( eot >= 10 ) && (rfidreadbytes[0] == 2) && (rfidreadbytes[eot-1]== 3 ) ) {  
+        Serial.println("POTTED ( ~12 byte ) Tag Detected");  
+        tagtype = 12;
+        }
+
+      // a positive response means permitted
+      int how_user_was_authorised =  rfid_is_valid(tagtype);
+      if ( how_user_was_authorised > 0) {  // 1 or 2
         Serial.println("...Permitted entry.");
         // open the door and show user other signs ass approriate.
         card_ok_entry_permitted();
         internal_green_on();
+        //external_green_on(); already turned on 
+
+        // if the sanned tag was from specifically the eeprom cache, still report it to the server, ignoring any result (for now)
+        if ( how_user_was_authorised == 1 ) {  // 1 only
+          remote_server_says_yes(typed_rfid_tag,42,deviceName);  // typed_rfid_tag is a global that's set by calling rfid_is_valid(...)
+          Serial.println("remote server sent tag for logging.");
+        }
+        
       } else { 
         Serial.println("...Denied entry.");
         // warn user that they have been denied entry

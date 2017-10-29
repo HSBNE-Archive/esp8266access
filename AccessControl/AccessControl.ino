@@ -23,6 +23,8 @@ Adafruit_NeoPixel NEO = Adafruit_NeoPixel(1, 14, NEO_RGB + NEO_KHZ800);
 // START DEFINES --------------------------------------------------------
 #define GREEN_ONBOARD_LED 13
 #define RELAY_ONBOARD 12
+#define RELAY_UNLOCK 0  
+#define RELAY_LOCK 1
 
 // THREE external LEDS  GREEN-WHITE-RED   , where the green and red are GPIO connected, and the "white" is just a power indicator.
  // GPIO4 =  lowest pin on box , yellow wire inside.
@@ -943,10 +945,10 @@ void loop() {
     
         // set the LED with the ledState of the variable:
         //digitalWrite(13, LOW); // LED
-        digitalWrite(12, LOW); // and RELAY
         internal_green_off();
         external_green_off();
         red_off();
+      digitalWrite(RELAY_ONBOARD, RELAY_LOCK);
 
         previousMillis = 0;
         

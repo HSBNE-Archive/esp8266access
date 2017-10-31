@@ -976,7 +976,7 @@ void loop() {
 
    // heap diagnostics
    heap = ESP.getFreeHeap();
-   if ( abs(heap - prevheap) > 100) {  // allow small movements without reporting.
+   if ( abs(heap - prevheap) > 500) {  // allow substantial movements without reporting.
      Serial.printf("free heap size: %u\n", heap);
      prevheap = heap;
    }

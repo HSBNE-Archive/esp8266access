@@ -69,7 +69,8 @@ const char *ssid = "HSBNEWiFi";
 char * Cipa = "10.0.1.220";
 char * Cgate = "10.0.1.254";
 char * Csubnetmask = "255.255.254.0";
-String deviceName = "MembersStorage";
+String deviceName = "MembersStorage"; // needs to exact match name displayed here: http://porthack.hsbne.org/access_summary.php
+String deviceNameLong = deviceName+"-Door"; // for OTA,etc make name a bit longer.
 
 int next_empty_slot = -1; 
 
@@ -455,7 +456,7 @@ void setup() {
         IPAddress gate;  gate.fromString(Cgate);
         IPAddress subnetmask; subnetmask.fromString(Csubnetmask);
         
-        WiFi.hostname(deviceName.c_str());      // DHCP Hostname (useful for finding device for static lease)
+        WiFi.hostname(deviceNameLong.c_str());      // DHCP Hostname (useful for finding device for static lease)
         WiFi.config(ipa, gate, subnetmask);  // (DNS not required)
         WiFi.begin(ssid, password);
 
@@ -502,7 +503,7 @@ void setup() {
             // ArduinoOTA.setPort(8266);
           
             // Hostname defaults to esp8266-[ChipID], we set it to the access control name
-            ArduinoOTA.setHostname(deviceName.c_str());
+            ArduinoOTA.setHostname(deviceNameLong.c_str());
           
             // No authentication by default
             //ArduinoOTA.setPassword((const char *)"admin");

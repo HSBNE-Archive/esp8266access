@@ -54,8 +54,17 @@ unsigned long lastDraw = 0;
 #endif
 
 // START DEFINES --------------------------------------------------------
-#define GREEN_ONBOARD_LED 13
+#define HW_SONOFF_CLASSIC 0
+#define HW_WEMOS_D1 1
+#define HARDWARE_TYPE  HW_WEMOS_D1
+
+#if HARDWARE_TYPE == HW_SONOFF_CLASSIC
+#define GREEN_ONBOARD_LED 13  //  classic sonoff has a onboard LED, and we use GPIO13 for it.
+#endif
+
 #define RELAY_ONBOARD 12
+
+// IMPORTANT thse two change around depending on the type of door hardware that's attached to the relay.  some doors are apply-power-to-open, and some are apply-power-to-lock
 #define RELAY_UNLOCK 1  
 #define RELAY_LOCK 0
 
@@ -88,7 +97,11 @@ NTPClient timeClient(NTP, "pool.ntp.org", tzoffset, updateinterval); // dns reso
 // GetDateTimeFromUnix() call results go here: 
 uint8_t Seconds, Minutes, Hours, WeekDay, Year, Month, Day; 
 
-SoftwareSerial readerSerial(14, SW_SERIAL_UNUSED_PIN); // RX, TX
+#define RFID_RX 14
+#if HARDWARE_TYPE == HW_WEMOS_D1
+#define RFID_RX 13   // pin labeled D7 = GPIO13
+#endif
+SoftwareSerial readerSerial(RFID_RX, SW_SERIAL_UNUSED_PIN); // RX, TX
 
 ESP8266WebServer HTTP(80);
 
@@ -423,22 +436,22 @@ void handleInterrupt() {
   interruptCounter++;
 }
 
+#if HARDWARE_TYPE == HW_SONOFF_CLASSIC
 // with software PWM, and vals in range 0-1023
 void internal_green_on() { analogWrite(GREEN_ONBOARD_LED, 0 ); }  // it's an inverted logic LED 0 = ON
 void internal_green_half() { analogWrite(GREEN_ONBOARD_LED, 512 ); }
 void internal_green_off() { analogWrite(GREEN_ONBOARD_LED, 1024 ); }  //1024 = OFF
+// well, since millis() is 1000 in a second, and we need approx 1024 intervals for the brightness 
+// we'll naturally get a 5hz cycle  at %5000 or heartbeat or pulse, we'll need to call this constantly in the main loop.
+//the /2 makes it darker ,the 1024- puts it at the darker end of the spectrum as this LED is wired HIGH=OFF
+void internal_green_pulse() { int m =  millis()%5000; int d = m > 2500?1:-1; int brightness = m/5*d; analogWrite(GREEN_ONBOARD_LED, brightness ); }
+#endif
 
 void red_on() { digitalWrite(RED_LED, 1 ); }  
 void red_off() { digitalWrite(RED_LED, 0 ); }  
 void external_green_on() { digitalWrite(GREEN_EXTERNAL_LED, 1 ); }  
 void external_green_off() { digitalWrite(GREEN_EXTERNAL_LED, 0 ); }  
 
-// well, since millis() is 1000 in a second, and we need approx 1024 intervals for the brightness 
-// we'll naturally get a 5hz cycle  at %5000 or heartbeat or pulse, we'll need to call this constantly in the main loop.
-//the /2 makes it darker ,the 1024- puts it at the darker end of the spectrum as this LED is wired HIGH=OFF
-void internal_green_pulse() { int m =  millis()%5000; int d = m > 2500?1:-1; int brightness = m/5*d; analogWrite(GREEN_ONBOARD_LED, brightness ); }
-// different to green, as is a digial , not a PWM
-//void eternal_green_pulse() { int m =  millis()%2000; int d = m > 1000?1:1; digitalWrite(GREEN_EXTERNAL_LED, d ); }
 
 
 void setup() {
@@ -449,15 +462,18 @@ void setup() {
         CheckFlashConfig();
 
         // LED and relay
+        #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
         pinMode(GREEN_ONBOARD_LED, OUTPUT);     // Initialize the  pin as an output
+        #endif
         pinMode(RED_LED, OUTPUT);     // Initialize the  pin as an output
         pinMode(GREEN_EXTERNAL_LED, OUTPUT);     // Initialize the  pin as an output
 
         //set initial LED state/s to off
         digitalWrite(RED_LED, LOW);   // Turn the LED on (Note that LOW is the voltage level
         digitalWrite(GREEN_EXTERNAL_LED, LOW);   // Turn the LED on (Note that LOW is the voltage level
+        #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
         digitalWrite(GREEN_ONBOARD_LED, HIGH);   // Turn the LED on (Note that LOW is the voltage level
-
+        #endif
 
         pinMode(RELAY_ONBOARD, OUTPUT);     // Initialize the pin as an output
         pinMode(interruptPin, INPUT_PULLUP); // pushbutton on GPIO0
@@ -517,7 +533,19 @@ void setup() {
           Serial.println(".....");
           delay(200);
           tries++;
-          if ( tries %2 ==  0 ) { external_green_off();  internal_green_off(); red_off();  } else { external_green_on();  internal_green_on(); red_on();  } 
+          if ( tries %2 ==  0 ) { 
+              external_green_off();  
+              #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
+              internal_green_off(); 
+              #endif
+              red_off();  
+            } else { 
+              external_green_on();  
+              #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
+              internal_green_on(); 
+              #endif
+              red_on();  
+              } 
           //digitalWrite(GREEN_ONBOARD_LED, !digitalRead(GREEN_ONBOARD_LED) ); 
         }
         //WIFI fail
@@ -529,13 +557,18 @@ void setup() {
           //WiFi.forceSleepBegin(); wdt_reset(); ESP.restart(); while(1)wdt_reset(); // this is an attempt at a workaround to the above, but not worky.
         }
         
+        
         Serial.println("Connected!");
         myIP = WiFi.localIP();
         Serial.print("STA IP address: ");
         Serial.println(myIP);
 
         // after wifi is setup, default it to this: 
-        external_green_off(); red_off(); internal_green_on();
+        external_green_off(); 
+        red_off(); 
+        #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
+        internal_green_on();
+        #endif
         
         #ifdef USE_NEOPIXELS
         statusLight('r'); // NEO goes blue->red after wifi is connected.
@@ -603,7 +636,9 @@ void setup() {
 void card_ok_entry_permitted() { 
     digitalWrite(RELAY_ONBOARD, RELAY_UNLOCK);
     external_green_on();
+    #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
     internal_green_on();
+    #endif
     red_off();
     delay(50);
     //digitalWrite(GREEN_ONBOARD_LED, HIGH); // LOW = ON for this LED, so turns green led OFF while door is OPEN. TODO maybe flash fast = good? ..? 
@@ -1034,7 +1069,9 @@ void loop() {
   }
   #endif
 
-  internal_green_pulse(); // show heartbeat on internal LED when we do nothing else.
+  #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
+  internal_green_pulse(); // show heartbeat on internal LED when we do nothing else, if we have one.
+  #endif
 
   #ifdef USE_OLED_WEMOS
   oled_clock_update();
@@ -1130,7 +1167,9 @@ void loop() {
         Serial.println("...Permitted entry.");
         // open the door and show user other signs ass approriate.
         card_ok_entry_permitted();
+        #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
         internal_green_on();
+        #endif
         //external_green_on(); already turned on 
 
         // if the sanned tag was from specifically the eeprom cache, still report it to the server, ignoring any result (for now)
@@ -1169,7 +1208,9 @@ void loop() {
     
         // set the LED with the ledState of the variable:
         //digitalWrite(13, LOW); // LED
+        #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
         internal_green_off();
+        #endif
         external_green_off();
         red_off();
       digitalWrite(RELAY_ONBOARD, RELAY_LOCK);

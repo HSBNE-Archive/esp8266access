@@ -25,7 +25,7 @@ Adafruit_NeoPixel NEO = Adafruit_NeoPixel(1, 14, NEO_RGB + NEO_KHZ800);
 #endif
 
 // for now, the OLED display just display/s a clockface.
-#define USE_OLED_WEMOS 1
+//#define USE_OLED_WEMOS 1
 #ifdef USE_OLED_WEMOS
 #include <Wire.h>  // Include Wire if you're using I2C
 #include <SFE_MicroOLED.h>  // Include the SFE_MicroOLED library

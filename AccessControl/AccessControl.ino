@@ -11,18 +11,14 @@
 #include "EEPROMAnything.h"
 
 // when compiling for Sonoff, use : Tools -> Board -> 'Generic ESP8266 Module', and then press-and-hold the "Press to Exit" button while pluggin in FTDI usb cable to pc.
-// when compiling for Wemos Mini D1: Tools -> Board -> 'WeMos D1 R2 & mini' , with reset method as "nodemcu",  there is no need press any hardware button/s
+// when compiling for Wemos Mini D1: Tools -> Board -> 'WeMos D1 R2 & mini' , with reset method as "nodemcu",  there is no need press any hardware button/s during upload
 
-//#define USE_NEOPIXELS 1
-#ifdef USE_NEOPIXELS
-#include <Adafruit_NeoPixel.h>
-Adafruit_NeoPixel NEO = Adafruit_NeoPixel(1, 14, NEO_RGB + NEO_KHZ800);
-#endif
 
 #define USE_OTA 1
 #ifdef USE_OTA
 #include <ArduinoOTA.h>
 #endif
+
 
 // for now, the OLED display just display/s a clockface.
 //#define USE_OLED_WEMOS 1
@@ -56,11 +52,36 @@ unsigned long lastDraw = 0;
 // START DEFINES --------------------------------------------------------
 #define HW_SONOFF_CLASSIC 0
 #define HW_WEMOS_D1 1
-#define HARDWARE_TYPE  HW_WEMOS_D1
+#define HW_OTHER 2
+
+// uncomment only one of thee:
+#define HARDWARE_TYPE  HW_SONOFF_CLASSIC
+//#define HARDWARE_TYPE  HW_WEMOS_D1
+//#define HARDWARE_TYPE  HW_OTHER
 
 #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
 #define GREEN_ONBOARD_LED 13  //  classic sonoff has a onboard LED, and we use GPIO13 for it.
+//#define USE_NEOPIXELS 0
 #endif
+
+#if HARDWARE_TYPE == HW_WEMOS_D1
+#define RGBLEDPIN            D3  // GPIO0
+#define USE_NEOPIXELS 1
+#endif
+
+#if HARDWARE_TYPE == HW_OTHER   
+#define RGBLEDPIN            14  
+#define USE_NEOPIXELS 1
+#endif
+
+// When we setup the NeoPixel library, we tell it how many pixels ( in this case, just one), and which pin to use to send signals.
+// Note that for older NeoPixel strips you might need to change the third parameter--see the strandtest
+// example for more information on possible values.
+#ifdef USE_NEOPIXELS
+#include <Adafruit_NeoPixel.h>
+Adafruit_NeoPixel NEO = Adafruit_NeoPixel(1, RGBLEDPIN, NEO_RGB + NEO_KHZ800);
+#endif
+
 
 #define RELAY_ONBOARD 12
 
@@ -79,9 +100,16 @@ unsigned long lastDraw = 0;
 #define MEMORY_HEADER_LEN 100
 #define MEMORY_RFID_LENGTH 4
 
-#define ENABLE_ESTOP_AS_EGRESS_BUTTON 1
+
 // on SONOFF GPIO0 is the oboard bushbutton, but an external button can be soldered over-the-top so either/both work.  any gpio except GPIO16 is ok.
+#define ENABLE_ESTOP_AS_EGRESS_BUTTON 1
+#if HARDWARE_TYPE == HW_SONOFF_CLASSIC
 #define EGRESS_OR_ESTOP 0 
+#endif
+#if HARDWARE_TYPE == HW_WEMOS_D1
+#define EGRESS_OR_ESTOP D4 // aka GPIO2
+#endif
+
 
 // END DEFINES --------------------------------------------------------
 
@@ -97,10 +125,13 @@ NTPClient timeClient(NTP, "pool.ntp.org", tzoffset, updateinterval); // dns reso
 // GetDateTimeFromUnix() call results go here: 
 uint8_t Seconds, Minutes, Hours, WeekDay, Year, Month, Day; 
 
+// must compile as 'generic esp8266 module' for this to work..? 
 #define RFID_RX 14
+
 #if HARDWARE_TYPE == HW_WEMOS_D1
 #define RFID_RX 13   // pin labeled D7 = GPIO13
 #endif
+
 SoftwareSerial readerSerial(RFID_RX, SW_SERIAL_UNUSED_PIN); // RX, TX
 
 ESP8266WebServer HTTP(80);
@@ -118,6 +149,11 @@ char * Csubnetmask = "255.255.254.0";
 String deviceName = "MembersStorage"; // needs to exact match name displayed here: http://porthack.hsbne.org/access_summary.php
 String deviceNameLong = deviceName+"-Door"; // for OTA,etc make name a bit longer.
 
+
+// passed to logger.php, and also expected in the POST to verify it's legit.
+String programmed_secret = "somethingsecret"; 
+
+
 int next_empty_slot = -1; 
 
 // unsigned long is 4 bytes
@@ -128,7 +164,7 @@ struct config_t
 
 int eot = 0; // position of most recentkly read byte in rfidreadbytes structure, so repreenting the 'end of tag' in the array.
 
-byte rfidreadbytes[14];
+byte rfidreadbytes[50]; // in a perfect world, we'll never use more than 5 or 12, but to reduce buffer overflow/s it's a bit longer.
 
 // remote web server
 const char* host = "10.0.1.253";
@@ -155,8 +191,11 @@ int ledState = LOW;
 // if there's been any change in the data, and we'll be formulating a new UDP packet..
 int udpnew = 0;
 
-// passed to logger.php, and also expected in the POST to verify it's legit.
-String programmed_secret = "abc123"; 
+// buzz notes: 
+// https://wiki.wemos.cc/products:d1_mini_shields:oled_shield
+// oled sheild uses D1 and D2 
+
+
 
 //END GLOBALS --------------------------------------------------------
 
@@ -165,14 +204,40 @@ void handleHTTP() {
   handleHTTPplus("");
 }
 
+
+
 void handleHTTPplus(String toclient) {
         Serial.print("A / http client connected, fyi.\n");
         WiFiClient x = HTTP.client();
         IPAddress i = x.remoteIP();
         Serial.println(i);
 
-        //String toclient = "";
+        toclient += HTTP.uri(); // 
 
+        // RESPOND TO SPECIFIC ARGS FROM USER, IF GIVEN, specifically allow /?clear=1 ( bit like a nettrol ) to be equivalent to /clear 
+        if ( HTTP.arg("clear")  != ""){     //Parameter not found
+             Serial.print("A /?clear=1 CLEAR CLEAR CLEAR.\n");
+              toclient += "a /?clear=1 CLEAR request for user list actioned.! <br>\n";
+              //  discard the eeprom list :-) 
+              clear_rfids_from_eeprom();
+        }
+        if ( HTTP.arg("open")  != ""){     //Parameter not found
+             Serial.print("A /?open=1 requested \n");
+              toclient += "A /?open=1 requested, doing it *now*......<br>\n";
+
+              // TODO security ..? 
+              // open door now. ( it will self-close after X amount of time. )
+              card_ok_entry_permitted(); // not really a 'card' request, faking it is ok for this. 
+              previousMillis = millis();
+        }
+        if ( HTTP.arg("close")  != ""){     //Parameter not found
+             Serial.print("A /?close=1 requested\n");
+              toclient += "A /?close=1 requested, ignored as esp8266 doors self-close.<br>\n";
+              // not needed, door self-locks
+        }
+
+        // GENERIC DISPLAY TO USER: 
+        
         Serial.print("LAST UPDATE WAS AT:"); 
         Serial.println(get_long_from_offset(96));
 
@@ -249,6 +314,33 @@ String get_nice_date_from_epoch(unsigned long now_epoch_secs) {
         return Str_now;
 }
 
+bool handleHTTPclear() {
+        Serial.print("A /clear http client connected, fyi.\n");
+
+        // we're about to get a whole new list ,so discard the old one. :-) 
+        clear_rfids_from_eeprom();
+
+        handleHTTPplus("CLEAR request for user list actioned.! <br>\n");  
+
+} 
+
+bool handleHTTPopen() {
+        Serial.print("A /open http client connected, fyi.\n");
+
+        card_ok_entry_permitted();
+        previousMillis = millis();
+
+        handleHTTPplus("/open request actioned.! <br>\n");  
+
+} 
+
+bool handleHTTPclose() {
+        Serial.print("A /close http client connected, fyi.\n");
+
+        handleHTTPplus("/close request ignored. door closes itself..! <br>\n");  
+
+} 
+
 //  only accepts POST requests for now. 
 bool handleHTTPusers() {
         Serial.print("A /users http client connected, fyi.\n");
@@ -267,6 +359,8 @@ bool handleHTTPusers() {
         String from_client = HTTP.arg("plain");
         String toclient = "";
 
+      //OPTIONAL - enforce that http requests to /users endpoint must come from a known and trusted IP address...
+      #if 0 
       if ( i != ihost ) { 
             Serial.print("client connected from  WRONG IP:" );
             Serial.print(i);
@@ -279,14 +373,15 @@ bool handleHTTPusers() {
             toclient += "<br>\n";
            handleHTTPplus(toclient);  
            return false;
-        } else { 
-            Serial.println("Client connected from CORRECT IP, continuing." );          
-        }
+      } else { 
+          Serial.println("Client connected from CORRECT IP, continuing." );          
+      }
+      #endif
        
 
         if (HTTP.hasArg("plain")== false){
            //Expecting POST request for user list, if we didn't get it, just display the default page with info.
-           handleHTTPplus("Expecting POST request for user list, dodn't get it.");  
+           handleHTTPplus("Expecting POST request for user list, didn't get it.");  
            return false;
         }
 
@@ -483,7 +578,14 @@ void setup() {
         #ifdef USE_NEOPIXELS
         NEO.begin(); // optional RGB led/s. 
         statusLight('b'); // blue on bootup till we have a wifi signal
+        delay(1000);
+        statusLight('r'); // blue on bootup till we have a wifi signal
+        delay(1000);
+        statusLight('y'); // blue on bootup till we have a wifi signal
+        delay(1000);
+        statusLight('g'); // blue on bootup till we have a wifi signal
         #endif
+
 
         #ifdef USE_OLED_WEMOS
         oled.begin();     // Initialize the OLED
@@ -571,7 +673,7 @@ void setup() {
         #endif
         
         #ifdef USE_NEOPIXELS
-        statusLight('r'); // NEO goes blue->red after wifi is connected.
+        statusLight('y'); // NEO goes blue->yellow after wifi is connected.
         #endif
 
         #ifdef USE_OTA
@@ -612,9 +714,12 @@ void setup() {
 
           // be a HTTP server:  - not totally critical for this, but it's working, so we might use it later for config.
         HTTP.on("/", handleHTTP);
-        HTTP.on("/index.html", handleHTTP); // same as above
-        Serial.println("HTTP server started");
-        HTTP.on("/users", handleHTTPusers); // same as above
+        HTTP.on("/index.html", handleHTTP); 
+        HTTP.on("/users", handleHTTPusers); 
+        HTTP.on("/clear", handleHTTPclear); 
+        HTTP.on("/open", handleHTTPopen); 
+        HTTP.on("/close", handleHTTPclose); 
+        //HTTP.on("/?", handleHTTPclear);  doesn't work like this, so we handle /?clear via the "/" handler, but the result is the same 
         Serial.println("HTTP server started");
 
 
@@ -634,11 +739,18 @@ void setup() {
 }
 
 void card_ok_entry_permitted() { 
+  
     digitalWrite(RELAY_ONBOARD, RELAY_UNLOCK);
+    
     external_green_on();
     #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
     internal_green_on();
     #endif
+
+    #ifdef USE_NEOPIXELS
+        statusLight('g'); // NEO goes blue->red after wifi is connected.
+    #endif
+    
     red_off();
     delay(50);
     //digitalWrite(GREEN_ONBOARD_LED, HIGH); // LOW = ON for this LED, so turns green led OFF while door is OPEN. TODO maybe flash fast = good? ..? 
@@ -647,6 +759,10 @@ void card_ok_entry_permitted() {
 
 // fast-flash-30-times for denied. ( thats ~3 secs ) 
 void card_ok_entry_denied() { 
+
+    //#ifdef USE_NEOPIXELS
+    //    statusLight('r'); // NEO goes blue->red after wifi is connected.
+    //#endif
 
     for ( int x = 0 ; x < 30 ; x++ ) { 
     //digitalWrite(GREEN_ONBOARD_LED, HIGH);
@@ -692,7 +808,7 @@ int remote_server_says_yes( unsigned long tag, unsigned long int door, String na
     // wait at most 2000ms for some data from client, don't wait that long if we din't have to.
     unsigned long timeout = millis();
       while (client.available() == 0) {
-        if (millis() - timeout > 3000) { // 2000 is a bit quick for the server unless it's primed by a recent call, so 3000 is better.
+        if (millis() - timeout > 5000) { // 2000 is a bit quick for the server unless it's primed by a recent call, so 3000 is better.
           Serial.println(">>> Client Timeout !");
           client.stop();
           return -1;
@@ -1049,10 +1165,10 @@ void loop() {
   //Serial.println("loop");
 
    HTTP.handleClient(); // http server requests need handling... 
-
+   
    timeClient.update(); // NTP packets   for current time do this:   Serial.println(timeClient.getFormattedTime());
 
-    ArduinoOTA.handle(); // this should allow us to OTA-update this device.
+   ArduinoOTA.handle(); // this should allow us to OTA-update this device.
 
    // heap diagnostics
    heap = ESP.getFreeHeap();
@@ -1063,6 +1179,9 @@ void loop() {
 
   #ifdef ENABLE_ESTOP_AS_EGRESS_BUTTON
   if ( interruptCounter  > 0 ) { 
+    Serial.print("EGRESS PRESSED!"); 
+    Serial.println(interruptCounter); 
+    
     card_ok_entry_permitted();  //calling another functon from interrupt context can generate crashes
     previousMillis = millis(); // this triggers a door-lock event a few seconds later.
     interruptCounter = 0;
@@ -1107,7 +1226,7 @@ void loop() {
     rfidreadbytes[eot] =  readerSerial.read();
     Serial.print(rfidreadbytes[eot]);        Serial.print(" ");
     eot++;
-    delay(2); // just to give a tiny bit more time for the bytes to arrive before we decide the 'read' is done.
+    delay(20); // just to give a tiny bit more time for the bytes to arrive before we decide the 'read' is done.
   }
 
 //  #ifdef OTHERUDP
@@ -1195,7 +1314,7 @@ void loop() {
   }
   if ( ( eot < 5) && (eot > 0) ) { 
     Serial.println("incomplete or corrupted RFID read, sorry. ");
-    while ( readerSerial.available() ) readerSerial.read(); // flush any remaining bytes.
+    while (  readerSerial.available() ) { char t = readerSerial.read(); Serial.print("flushed:"); Serial.println(t); } // flush any remaining bytes.
     eot = 0;
   }
 
@@ -1215,6 +1334,10 @@ void loop() {
         red_off();
       digitalWrite(RELAY_ONBOARD, RELAY_LOCK);
 
+      #ifdef USE_NEOPIXELS
+          statusLight('y'); // NEO goes 
+      #endif
+    
         previousMillis = 0;
         
    }
@@ -1278,13 +1401,15 @@ void GetDateTimeFromUnix( uint32_t unix) {
 
 #ifdef USE_NEOPIXELS
 char statusLight(char color) {
+  Serial.print("statusLight:");
+  Serial.println(color);
   switch (color) {
-    case 'r':
+    case 'g':
       {
         NEO.setPixelColor(0, 250, 0, 0);
         break;
       }
-    case 'g':
+    case 'r':
       {
         NEO.setPixelColor(0, 0, 250, 0);
         break;
@@ -1296,7 +1421,7 @@ char statusLight(char color) {
       }
     case 'y':
       {
-        NEO.setPixelColor(0, 255, 100, 0);
+        NEO.setPixelColor(0, 20, 20, 0); // light yellow
         break;
       }
   }

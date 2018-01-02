@@ -11,7 +11,7 @@
 #include "EEPROMAnything.h"
 
 // when compiling for Sonoff, use : Tools -> Board -> 'Generic ESP8266 Module', and then press-and-hold the "Press to Exit" button while pluggin in FTDI usb cable to pc.
-// when compiling for Wemos Mini D1: Tools -> Board -> 'WeMos D1 R2 & mini' , with reset method as "nodemcu",  there is no need press any hardware button/s during upload
+// when compiling for Wemos Mini D1: Tools -> Board -> 'WeMos D1 R2 & mini' ( its reset method is "nodemcu")  there is no need press any hardware button/s during upload or power on.
 
 
 #define USE_OTA 1
@@ -19,6 +19,11 @@
 #include <ArduinoOTA.h>
 #endif
 
+// doto make this used everywhere as reqd: 
+#define ISDOOR 1
+#define ISINTERLOCK 2
+#define INTERLOCK_OR_DOOR ISDOOR 
+//#define INTERLOCK_OR_DOOR ISINTERLOCK 
 
 // for now, the OLED display just display/s a clockface.
 //#define USE_OLED_WEMOS 1
@@ -55,23 +60,30 @@ unsigned long lastDraw = 0;
 #define HW_OTHER 2
 
 // uncomment only one of thee:
-#define HARDWARE_TYPE  HW_SONOFF_CLASSIC
-//#define HARDWARE_TYPE  HW_WEMOS_D1
+//#define HARDWARE_TYPE  HW_SONOFF_CLASSIC
+#define HARDWARE_TYPE  HW_WEMOS_D1
 //#define HARDWARE_TYPE  HW_OTHER
 
 #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
 #define GREEN_ONBOARD_LED 13  //  classic sonoff has a onboard LED, and we use GPIO13 for it.
 //#define USE_NEOPIXELS 0
+#define RELAY_ONBOARD 12  // TODO check this.
 #endif
 
 #if HARDWARE_TYPE == HW_WEMOS_D1
 #define RGBLEDPIN            D3  // GPIO0
 #define USE_NEOPIXELS 1
+#define RELAY_ONBOARD 12   // THIS IS good.
 #endif
 
-#if HARDWARE_TYPE == HW_OTHER   
+#if HARDWARE_TYPE == HW_OTHER    // nogs interlock HW on wood saw.. ( untested with this code) 
 #define RGBLEDPIN            14  
 #define USE_NEOPIXELS 1
+#define RELAY_ONBOARD 12 
+#endif
+
+#ifndef RELAY_ONBOARD
+#error you must define RELAY_ONBOARD to match your hardware or no relay will be toggled.
 #endif
 
 // When we setup the NeoPixel library, we tell it how many pixels ( in this case, just one), and which pin to use to send signals.
@@ -83,7 +95,6 @@ Adafruit_NeoPixel NEO = Adafruit_NeoPixel(1, RGBLEDPIN, NEO_RGB + NEO_KHZ800);
 #endif
 
 
-#define RELAY_ONBOARD 12
 
 // IMPORTANT thse two change around depending on the type of door hardware that's attached to the relay.  some doors are apply-power-to-open, and some are apply-power-to-lock
 #define RELAY_UNLOCK 1  
@@ -171,7 +182,13 @@ const char* host = "10.0.1.253";
 const int httpPort = 80;
 unsigned long lastConnectionTime = 0; // most recent time we had any comms on the http/wifi interface. 
 unsigned long lastAttemptTime = 0; // most recent time we tried to have any comms on the http/wifi interface. 
+
+#if INTERLOCK_OR_DOOR == ISDOOR 
 unsigned long pollingInterval = 60;        // maximum 60 secs between network checks, in seconds. Also, being offline for 5 in a row ( 5 mins ) of these causes a hard reboot.
+#endif
+#if INTERLOCK_OR_DOOR == ISINTERLOCK 
+unsigned long pollingInterval = 600;        // maximum 600 secs between network checks, in seconds. Also, being offline for 5 in a row ( 50 mins ) of these causes a hard reboot.
+#endif
 
 
 //// unused at present.
@@ -184,7 +201,13 @@ unsigned long pollingInterval = 60;        // maximum 60 secs between network ch
 
 unsigned long previousMillis = 0;        // will store last time LED/relay was updated
 
-const long interval = 4000; // how long it's OPEN for..
+#if INTERLOCK_OR_DOOR == ISDOOR 
+const long interval = 4000; // how long it's OPEN for..  4 seconds is enough to go thru a door
+#endif
+
+#if INTERLOCK_OR_DOOR == ISINTERLOCK
+const long interval = 30000; // how long it's OPEN for..  TEST = 30 secs.   live: 4000*3600 = 4 hrs should be enough to do a laser job.
+#endif
 
 int ledState = LOW; 
 
@@ -212,7 +235,9 @@ void handleHTTPplus(String toclient) {
         IPAddress i = x.remoteIP();
         Serial.println(i);
 
+        // display the url that we can in at, back to the user, for debug only
         toclient += HTTP.uri(); // 
+        toclient += "<br>\n"; // 
 
         // RESPOND TO SPECIFIC ARGS FROM USER, IF GIVEN, specifically allow /?clear=1 ( bit like a nettrol ) to be equivalent to /clear 
         if ( HTTP.arg("clear")  != ""){     //Parameter not found
@@ -381,7 +406,7 @@ bool handleHTTPusers() {
 
         if (HTTP.hasArg("plain")== false){
            //Expecting POST request for user list, if we didn't get it, just display the default page with info.
-           handleHTTPplus("Expecting POST request for user list, didn't get it.");  
+           handleHTTPplus("Expecting POST request for user list, didn't get it.<br>");  
            return false;
         }
 
@@ -398,7 +423,7 @@ bool handleHTTPusers() {
            //toclient += "SECRET:"; toclient += mysecret; toclient += "<br>\n";
 
            if ( mysecret != programmed_secret ) { 
-              handleHTTPplus("Expecting 'secret' as part of  request for user list, didn't get it.");  
+              handleHTTPplus("Expecting 'secret' as part of  request for user list, didn't get it.<br>");  
               return false;
            } else { 
              // secret was accepted OK, say nothing about it here.
@@ -550,6 +575,8 @@ void external_green_off() { digitalWrite(GREEN_EXTERNAL_LED, 0 ); }
 
 
 void setup() {
+
+  
         Serial.begin(19200);
         delay(1000);
         Serial.println("begin");
@@ -577,13 +604,15 @@ void setup() {
 
         #ifdef USE_NEOPIXELS
         NEO.begin(); // optional RGB led/s. 
-        statusLight('b'); // blue on bootup till we have a wifi signal
+        statusLight('b'); // test cycle on boot
         delay(1000);
-        statusLight('r'); // blue on bootup till we have a wifi signal
+        statusLight('r'); // test cycle on boot
         delay(1000);
-        statusLight('y'); // blue on bootup till we have a wifi signal
+        statusLight('y'); // test cycle on boot
         delay(1000);
-        statusLight('g'); // blue on bootup till we have a wifi signal
+        statusLight('g'); // test cycle on boot
+        delay(1000);
+        statusLight('o'); // off
         #endif
 
 
@@ -629,7 +658,20 @@ void setup() {
 
 
         // Wait for connection
-        Serial.println("trying to connect to WIFI.....");
+        Serial.print("trying to connect to WIFI..... ");
+        Serial.print(ssid); Serial.print(" (");Serial.print(password);  Serial.println(")");
+
+        Serial.print("Hardware Type:");
+        #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
+        Serial.println(F("SONOFF-CLASSIC"));        
+        #endif
+        #if HARDWARE_TYPE == HW_WEMOS_D1
+        Serial.println(F("WEMOS-D1"));        
+        #endif
+        #if HARDWARE_TYPE == HW_OTHER
+        Serial.println(F("UNKNOWN-HARDWARE-TYPE"));        
+        #endif
+               
         int tries = 0;
         while ((WiFi.status() != WL_CONNECTED ) && (tries < 50 ) ){
           Serial.println(".....");
@@ -673,7 +715,7 @@ void setup() {
         #endif
         
         #ifdef USE_NEOPIXELS
-        statusLight('y'); // NEO goes blue->yellow after wifi is connected.
+        statusLight('y'); // NEO goes ->yellow after wifi is connected.
         #endif
 
         #ifdef USE_OTA
@@ -747,6 +789,11 @@ void card_ok_entry_permitted() {
     internal_green_on();
     #endif
 
+    // brifly let RGB go yellow, incase it was actually green tostart with, so we se some state acknowledgement...
+    #ifdef USE_NEOPIXELS
+        statusLight('y'); 
+    #endif
+    delay(100); // just for a tiny bit, then GREEN as acknowledgement....
     #ifdef USE_NEOPIXELS
         statusLight('g'); // NEO goes blue->red after wifi is connected.
     #endif
@@ -760,10 +807,16 @@ void card_ok_entry_permitted() {
 // fast-flash-30-times for denied. ( thats ~3 secs ) 
 void card_ok_entry_denied() { 
 
-    //#ifdef USE_NEOPIXELS
-    //    statusLight('r'); // NEO goes blue->red after wifi is connected.
-    //#endif
+    #ifdef USE_NEOPIXELS
+    for ( int x = 0 ; x < 20 ; x++ ) { 
+        statusLight('r');  // show red for a moment, but then return to yellow after.
+        delay(50);
+        statusLight('y');  // the RED is much brighter, so use POV to make the yellow appear brighter. 
+        delay(200);
+    }
+    #endif
 
+    #ifndef USE_NEOPIXELS
     for ( int x = 0 ; x < 30 ; x++ ) { 
     //digitalWrite(GREEN_ONBOARD_LED, HIGH);
     red_off();
@@ -773,6 +826,8 @@ void card_ok_entry_denied() {
     delay(50);
     } 
     red_off();
+    #endif
+
 }
 
 // returns -1 on unhandled error, 0 if remote server denies it, and 1 if remote server permits it.
@@ -1212,7 +1267,7 @@ void loop() {
   // if we go more than 5 minutes without an actual link, reboot! 
   // now do something extreme if we go for 5 minutes without hearing from the server:  ( ie 5 times the polling interval )
   if ((unsigned long)(millis() - lastConnectionTime) > (unsigned long)(pollingInterval*1000*5) ) {
-    Serial.println("Rebooting becuase network was offline for more than 5 minutes.");
+    Serial.println("Rebooting becuase network was offline for more than 5(door) or 50(interlock) minutes.");
     Serial.flush();
     delay(5);
     ESP.restart(); //this hangs the first time after a device was serial programmed.
@@ -1265,6 +1320,12 @@ void loop() {
        //digitalWrite(GREEN_ONBOARD_LED, HIGH); // for this LED , HIGH = off, but it's on most of the time, so turning it OFF here works.
        external_green_on(); 
 
+      #ifdef USE_NEOPIXELS
+      statusLight('g'); // NEO goes just briefly green for a sec, so user knows it was READ.
+      delay(200);
+      statusLight('y'); // NEO goes yellow again while we think about it.....
+      #endif
+
       int tagtype = 0;
       // "RAW" RFID TAGS emit exactly 5 bytes, ( LIKE THE ONES RESIN-POTTED BY BUZZ )
       // simple 4+1 byte tags.
@@ -1283,7 +1344,7 @@ void loop() {
       // a positive response means permitted
       int how_user_was_authorised =  rfid_is_valid(tagtype);
       if ( how_user_was_authorised > 0) {  // 1 or 2
-        Serial.println("...Permitted entry.");
+        Serial.println("...Permitted entry/usage.");
         // open the door and show user other signs ass approriate.
         card_ok_entry_permitted();
         #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
@@ -1321,9 +1382,16 @@ void loop() {
    // turn it off some time later. 
    unsigned long currentMillis = millis();
 
+   //TODO - can this counter go as high as 4 or more hours if needed. - needs TEST
    if ((currentMillis - previousMillis >= interval) && (  previousMillis != 0 ) )  {
 
+        #if INTERLOCK_OR_DOOR == ISDOOR
         Serial.println("RELOCKED-DOOR");
+        #endif
+        #if INTERLOCK_OR_DOOR == ISINTERLOCK
+        Serial.println("RELOCKED-INTERLOCK");
+        #endif
+        Serial.println(interval);
     
         // set the LED with the ledState of the variable:
         //digitalWrite(13, LOW); // LED
@@ -1406,22 +1474,27 @@ char statusLight(char color) {
   switch (color) {
     case 'g':
       {
-        NEO.setPixelColor(0, 250, 0, 0);
+        NEO.setPixelColor(0, 250, 0, 0); //green
         break;
       }
     case 'r':
       {
-        NEO.setPixelColor(0, 0, 250, 0);
+        NEO.setPixelColor(0, 0, 250, 0); // red
         break;
       }
     case 'b':
       {
-        NEO.setPixelColor(0, 0, 0, 250);
+        NEO.setPixelColor(0, 0, 0, 250); // blue
         break;
       }
     case 'y':
       {
         NEO.setPixelColor(0, 20, 20, 0); // light yellow
+        break;
+      }
+    case 'o':
+      {
+        NEO.setPixelColor(0, 0, 0, 0); // off
         break;
       }
   }

@@ -2,24 +2,41 @@
 // uncomment next line to enable OLED on WEMOS stuff
 //#define USE_OLED_WEMOS
 
+//--------------------------------oled globals -------------------------------------------
+
+
+// for now, the OLED display just display/s a clockface.
+#ifdef USE_OLED_WEMOS
+#include <Wire.h>  // Include Wire if you're using I2C
+#include <SFE_MicroOLED.h>  // Include the SFE_MicroOLED library
+#define OLED_RESET 255  //
+#define DC_JUMPER 0  // I2C Addres: 0 - 0x3C, 1 - 0x3D
+MicroOLED oled(OLED_RESET, DC_JUMPER);  // I2C Example
+// Use these variables to set the initial time
+int hours = 11;
+int minutes = 50;
+int seconds = 30;
+// How fast do you want the clock to spin? Set this to 1 for fun.
+// Set this to 1000 to get _about_ 1 second timing.
+const int CLOCK_SPEED = 1000; // TODO, sync this with the NTP time we actually have onboard.
+// Global variables to help draw the clock face:
+const int MIDDLE_Y = oled.getLCDHeight() / 2;
+const int MIDDLE_X = oled.getLCDWidth() / 2;
+int CLOCK_RADIUS;
+int POS_12_X, POS_12_Y;
+int POS_3_X, POS_3_Y;
+int POS_6_X, POS_6_Y;
+int POS_9_X, POS_9_Y;
+int S_LENGTH;
+int M_LENGTH;
+int H_LENGTH;
+unsigned long lastDraw = 0;
+#endif
+
+//---------------------------------oled functions------------------------------------------
 
 #ifdef USE_OLED_WEMOS
 
-void oled_clock_update() { 
-  // OLED DISPLAY Check if we need to update seconds, minutes, hours:
-  if (lastDraw + CLOCK_SPEED < millis())
-  {
-    lastDraw = millis();
-    // Add a second, update minutes/hours if necessary:
-    updateTime();
-    
-    // Draw the clock:
-    oled.clear(PAGE);  // Clear the buffer
-    drawFace();  // Draw the face to the buffer
-    drawArms(hours, minutes, seconds);  // Draw arms to the buffer
-    oled.display(); // Draw the memory buffer
-  }
-}
 
 void initClockVariables()
 {
@@ -119,6 +136,23 @@ void drawFace()
   oled.print(9);
   oled.setCursor(POS_3_X, POS_3_Y);
   oled.print(3);
+}
+
+
+void oled_clock_update() { 
+  // OLED DISPLAY Check if we need to update seconds, minutes, hours:
+  if (lastDraw + CLOCK_SPEED < millis())
+  {
+    lastDraw = millis();
+    // Add a second, update minutes/hours if necessary:
+    updateTime();
+    
+    // Draw the clock:
+    oled.clear(PAGE);  // Clear the buffer
+    drawFace();  // Draw the face to the buffer
+    drawArms(hours, minutes, seconds);  // Draw arms to the buffer
+    oled.display(); // Draw the memory buffer
+  }
 }
 
 #endif

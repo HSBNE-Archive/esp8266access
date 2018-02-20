@@ -30,35 +30,6 @@
 
 
 
-// for now, the OLED display just display/s a clockface.
-//#define USE_OLED_WEMOS 1
-#ifdef USE_OLED_WEMOS
-#include <Wire.h>  // Include Wire if you're using I2C
-#include <SFE_MicroOLED.h>  // Include the SFE_MicroOLED library
-#define OLED_RESET 255  //
-#define DC_JUMPER 0  // I2C Addres: 0 - 0x3C, 1 - 0x3D
-MicroOLED oled(OLED_RESET, DC_JUMPER);  // I2C Example
-// Use these variables to set the initial time
-int hours = 11;
-int minutes = 50;
-int seconds = 30;
-// How fast do you want the clock to spin? Set this to 1 for fun.
-// Set this to 1000 to get _about_ 1 second timing.
-const int CLOCK_SPEED = 1000; // TODO, sync this with the NTP time we actually have onboard.
-// Global variables to help draw the clock face:
-const int MIDDLE_Y = oled.getLCDHeight() / 2;
-const int MIDDLE_X = oled.getLCDWidth() / 2;
-int CLOCK_RADIUS;
-int POS_12_X, POS_12_Y;
-int POS_3_X, POS_3_Y;
-int POS_6_X, POS_6_Y;
-int POS_9_X, POS_9_Y;
-int S_LENGTH;
-int M_LENGTH;
-int H_LENGTH;
-unsigned long lastDraw = 0;
-#endif
-
 // START DEFINES --------------------------------------------------------
 #define HW_SONOFF_CLASSIC 0
 #define HW_WEMOS_D1 1

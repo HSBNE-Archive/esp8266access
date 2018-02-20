@@ -64,11 +64,14 @@ unsigned long lastDraw = 0;
 #define HW_SONOFF_CLASSIC 0
 #define HW_WEMOS_D1 1
 #define HW_OTHER 2
+#define HW_NOG_TH16 3
 
 // uncomment only one of thee:
 //#define HARDWARE_TYPE  HW_SONOFF_CLASSIC
-#define HARDWARE_TYPE  HW_WEMOS_D1
+//#define HARDWARE_TYPE  HW_WEMOS_D1
 //#define HARDWARE_TYPE  HW_OTHER
+#define HARDWARE_TYPE  HW_NOG_TH16
+
 
 #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
 #define GREEN_ONBOARD_LED 13  //  classic sonoff has a onboard LED, and we use GPIO13 for it.
@@ -88,6 +91,12 @@ unsigned long lastDraw = 0;
 #define RELAY_ONBOARD 12 
 #endif
 
+#if HARDWARE_TYPE == HW_NOG_TH16    // nogs DOOR hardware with TH16, two round metal connectors on case ( a 2 pin for solenoid/door and a 4 pin for rfid etc ) 
+#define GREEN_ONBOARD_LED 13
+#define RELAY_ONBOARD 12 
+#endif
+
+
 #ifndef RELAY_ONBOARD
 #error you must define RELAY_ONBOARD to match your hardware or no relay will be toggled.
 #endif
@@ -102,9 +111,11 @@ Adafruit_NeoPixel NEO = Adafruit_NeoPixel(1, RGBLEDPIN, NEO_RGB + NEO_KHZ800);
 
 
 
-// IMPORTANT thse two change around depending on the type of door hardware that's attached to the relay.  some doors are apply-power-to-open, and some are apply-power-to-lock
+// IMPORTANT thse two change around depending on the type of door hardware that's attached to the relay.  
+// some doors are apply-power-to-open, and some are apply-power-to-lock
 #define RELAY_UNLOCK 1  
 #define RELAY_LOCK 0
+
 
 // THREE external LEDS  GREEN-WHITE-RED   , where the green and red are GPIO connected, and the "white" is just a power indicator.
  // GPIO4 =  lowest pin on box , yellow wire inside.
@@ -120,13 +131,19 @@ Adafruit_NeoPixel NEO = Adafruit_NeoPixel(1, RGBLEDPIN, NEO_RGB + NEO_KHZ800);
 
 // on SONOFF GPIO0 is the oboard bushbutton, but an external button can be soldered over-the-top so either/both work.  any gpio except GPIO16 is ok.
 #define ENABLE_ESTOP_AS_EGRESS_BUTTON 1
+
 #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
 #define EGRESS_OR_ESTOP 0 
 #endif
 #if HARDWARE_TYPE == HW_WEMOS_D1
 #define EGRESS_OR_ESTOP D4 // aka GPIO2
 #endif
-
+#if HARDWARE_TYPE == HW_OTHER
+#define EGRESS_OR_ESTOP 0
+#endif
+#if HARDWARE_TYPE == HW_NOG_TH16    
+#define EGRESS_OR_ESTOP 0   // GPIO0
+#endif
 
 // END DEFINES --------------------------------------------------------
 
@@ -149,26 +166,38 @@ uint8_t Seconds, Minutes, Hours, WeekDay, Year, Month, Day;
 #define RFID_RX 13   // pin labeled D7 = GPIO13
 #endif
 
-SoftwareSerial readerSerial(RFID_RX, SW_SERIAL_UNUSED_PIN); // RX, TX
+#if HARDWARE_TYPE != HW_NOG_TH16    
+SoftwareSerial readerSerial(RFID_RX, SW_SERIAL_UNUSED_PIN); // reader/s RX, TX is usually on it's own GPIO, except for HW_NOG_TH16
+#endif
+
+#if HARDWARE_TYPE == HW_NOG_TH16 // RFID tag reader is on same RX/TX as programming port / debug console, and is unplugged during programming. 
+#define readerSerial Serial
+#endif
+
 
 ESP8266WebServer HTTP(80);
 
 IPAddress myIP; // us, once we know it.
 
 //  a client of this TX wifi network:
-const char *password = "xxxxxxxxxxxxx";
 const char *ssid = "HSBNEWiFi";
+const char *password = "HSBNEPortHack";
+//const char *ssid = "PRETTYFLYFORAWIFI";
+//const char *password = "qwer1234";
 
 // static IP address assigment, gateway, and netmask.
-char * Cipa = "10.0.1.220";
+char * Cipa = "10.0.1.221";
 char * Cgate = "10.0.1.254";
+//char * Cipa = "192.168.192.220";
+//char * Cgate = "192.168.192.1";
 char * Csubnetmask = "255.255.254.0";
-String deviceName = "MembersStorage"; // needs to exact match name displayed here: http://porthack.hsbne.org/access_summary.php
+
+String deviceName = "BuzzTest2"; // needs to exact match name displayed here: http://porthack.hsbne.org/access_summary.php
 String deviceNameLong = deviceName+"-Door"; // for OTA,etc make name a bit longer.
 
 
 // passed to logger.php, and also expected in the POST to verify it's legit.
-String programmed_secret = "somethingsecret"; 
+String programmed_secret = "asecret"; 
 
 
 int next_empty_slot = -1; 
@@ -562,8 +591,9 @@ void handleInterrupt() {
   interruptCounter++;
 }
 
-#if HARDWARE_TYPE == HW_SONOFF_CLASSIC
+
 // with software PWM, and vals in range 0-1023
+// these  LED function/s are not used in all hardware type/s.
 void internal_green_on() { analogWrite(GREEN_ONBOARD_LED, 0 ); }  // it's an inverted logic LED 0 = ON
 void internal_green_half() { analogWrite(GREEN_ONBOARD_LED, 512 ); }
 void internal_green_off() { analogWrite(GREEN_ONBOARD_LED, 1024 ); }  //1024 = OFF
@@ -571,8 +601,6 @@ void internal_green_off() { analogWrite(GREEN_ONBOARD_LED, 1024 ); }  //1024 = O
 // we'll naturally get a 5hz cycle  at %5000 or heartbeat or pulse, we'll need to call this constantly in the main loop.
 //the /2 makes it darker ,the 1024- puts it at the darker end of the spectrum as this LED is wired HIGH=OFF
 void internal_green_pulse() { int m =  millis()%5000; int d = m > 2500?1:-1; int brightness = m/5*d; analogWrite(GREEN_ONBOARD_LED, brightness ); }
-#endif
-
 void red_on() { digitalWrite(RED_LED, 1 ); }  
 void red_off() { digitalWrite(RED_LED, 0 ); }  
 void external_green_on() { digitalWrite(GREEN_EXTERNAL_LED, 1 ); }  
@@ -582,8 +610,16 @@ void external_green_off() { digitalWrite(GREEN_EXTERNAL_LED, 0 ); }
 
 void setup() {
 
-  
+        #if HARDWARE_TYPE != HW_NOG_TH16    
         Serial.begin(19200);
+        readerSerial.begin(9600); 
+        #endif
+
+        // the NOG hardware has the serrila debug console on the same hardware as the RFID reader, so needs to run at the same BAUD rate as the RFID reader. 
+        #if HARDWARE_TYPE == HW_NOG_TH16    
+        Serial.begin(9600);
+        #endif
+        
         delay(1000);
         Serial.println("begin");
 
@@ -593,6 +629,9 @@ void setup() {
         #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
         pinMode(GREEN_ONBOARD_LED, OUTPUT);     // Initialize the  pin as an output
         #endif
+        #if HARDWARE_TYPE == HW_NOG_TH16
+        pinMode(GREEN_ONBOARD_LED, OUTPUT);     // Initialize the  pin as an output
+        #endif
         pinMode(RED_LED, OUTPUT);     // Initialize the  pin as an output
         pinMode(GREEN_EXTERNAL_LED, OUTPUT);     // Initialize the  pin as an output
 
@@ -600,6 +639,9 @@ void setup() {
         digitalWrite(RED_LED, LOW);   // Turn the LED on (Note that LOW is the voltage level
         digitalWrite(GREEN_EXTERNAL_LED, LOW);   // Turn the LED on (Note that LOW is the voltage level
         #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
+        digitalWrite(GREEN_ONBOARD_LED, HIGH);   // Turn the LED on (Note that LOW is the voltage level
+        #endif
+        #if HARDWARE_TYPE == HW_NOG_TH16
         digitalWrite(GREEN_ONBOARD_LED, HIGH);   // Turn the LED on (Note that LOW is the voltage level
         #endif
 
@@ -688,10 +730,16 @@ void setup() {
               #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
               internal_green_off(); 
               #endif
+              #if HARDWARE_TYPE == HW_NOG_TH16
+              internal_green_off(); 
+              #endif
               red_off();  
             } else { 
               external_green_on();  
               #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
+              internal_green_on(); 
+              #endif
+              #if HARDWARE_TYPE == HW_NOG_TH16
               internal_green_on(); 
               #endif
               red_on();  
@@ -719,7 +767,9 @@ void setup() {
         #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
         internal_green_on();
         #endif
-        
+        #if HARDWARE_TYPE == HW_NOG_TH16
+        internal_green_on();
+        #endif        
         #ifdef SONGS
         play_rtttl(bootupsong);
         #endif
@@ -798,7 +848,10 @@ void card_ok_entry_permitted() {
     #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
     internal_green_on();
     #endif
-
+    #if HARDWARE_TYPE == HW_NOG_TH16
+    internal_green_on();
+    #endif
+    
     // brifly let RGB go yellow, incase it was actually green tostart with, so we se some state acknowledgement...
     #ifdef USE_NEOPIXELS
         statusLight('y'); 
@@ -1368,6 +1421,9 @@ void loop() {
         #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
         internal_green_on();
         #endif
+        #if HARDWARE_TYPE == HW_NOG_TH16
+        internal_green_on();
+        #endif        
         //external_green_on(); already turned on 
 
         // if the sanned tag was from specifically the eeprom cache, still report it to the server, ignoring any result (for now)
@@ -1416,6 +1472,10 @@ void loop() {
         #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
         internal_green_off();
         #endif
+        #if HARDWARE_TYPE == HW_NOG_TH16
+        internal_green_off();
+        #endif
+        
         external_green_off();
         red_off();
       digitalWrite(RELAY_ONBOARD, RELAY_LOCK);

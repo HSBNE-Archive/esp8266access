@@ -66,6 +66,8 @@
 #define RELAY_ONBOARD 12 
 #endif
 
+// uncomment this to use DHCP, otherwise scroll down and be sure you setup the Static IP address info at around line 160.
+//#define USE_DHCP 1
 
 #ifndef RELAY_ONBOARD
 #error you must define RELAY_ONBOARD to match your hardware or no relay will be toggled.
@@ -155,12 +157,14 @@ const char *password = "HSBNEPortHack";
 //const char *ssid = "PRETTYFLYFORAWIFI";
 //const char *password = "qwer1234";
 
-// static IP address assigment, gateway, and netmask.
+#ifndef USE_DHCP
+// static IP address assigment, gateway, and netmask, if used.
 char * Cipa = "10.0.1.221";
 char * Cgate = "10.0.1.254";
 //char * Cipa = "192.168.192.220";
 //char * Cgate = "192.168.192.1";
 char * Csubnetmask = "255.255.254.0";
+#endif
 
 String deviceName = "BuzzTest2"; // needs to exact match name displayed here: http://porthack.hsbne.org/access_summary.php
 String deviceNameLong = deviceName+"-Door"; // for OTA,etc make name a bit longer.
@@ -655,12 +659,16 @@ void setup() {
         
         Serial.print("Configuring as Station, NOT AP...");
         // Connect to pre-existing WiFi network with WIFI_STA
-        WiFi.disconnect();
+        WiFi.disconnect(); // remove old cached data if any.
+        
+        #ifdef USE_DHCP
         // DYNAMIC or SERVER ASSIGNED IP SETUP
-        //WiFi.mode(WIFI_STA); // WIFI_AP or WIFI_STA
-        //WiFi.begin(ssid,password );
+        Serial.println("Configured to use DHCP...");
+        WiFi.mode(WIFI_STA); // WIFI_AP or WIFI_STA
         //OR:
-        // STATIC IP ASSIGNMENT..      
+        #else   
+        // STATIC IP ASSIGNMENT..   
+        Serial.println("Configured with Fixed IP-Address ...");
         WiFi.mode(WIFI_STA);
         IPAddress ipa;   ipa.fromString(Cipa); 
         IPAddress gate;  gate.fromString(Cgate);
@@ -668,6 +676,8 @@ void setup() {
         
         WiFi.hostname(deviceNameLong.c_str());      // DHCP Hostname (useful for finding device for static lease)
         WiFi.config(ipa, gate, subnetmask);  // (DNS not required)
+        #endif
+
         WiFi.begin(ssid, password);
 
         // on wifi connect and wifi disconnect events, we get notified. 
@@ -676,7 +686,7 @@ void setup() {
 
 
         // Wait for connection
-        Serial.print("trying to connect to WIFI..... ");
+        Serial.print("... trying to connect to WIFI..... ");
         Serial.print(ssid); Serial.print(" (");Serial.print(password);  Serial.println(")");
 
         Serial.print("Hardware Type:");

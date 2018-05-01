@@ -13,8 +13,10 @@
 #include "Oled_Stuff.h"  // monophonic music support
 
 
-// when compiling for Sonoff, use : Tools -> Board -> 'Generic ESP8266 Module', and then press-and-hold the "Press to Exit" button while pluggin in FTDI usb cable to pc.
+// when compiling for Sonoff, use : Tools -> Board -> 'Generic ESP8266 Module', Flash Mode -> DOUT ,  and then press-and-hold the "Press to Exit" button while pluggin in FTDI usb cable to pc.
 // when compiling for Wemos Mini D1: Tools -> Board -> 'WeMos D1 R2 & mini' ( its reset method is "nodemcu")  there is no need press any hardware button/s during upload or power on.
+//
+// also be sure you Set Tools->'Flash Size' to match the 'Flash real size: xxxxxx' reported by the TH16 on boot, and the smallest SPIFFS size you can.( ie '1M 64k spiffs' ) or OTA updates wont work.  
 
 
 #define USE_OTA 1
@@ -620,6 +622,8 @@ void setup() {
         #endif
 
         pinMode(RELAY_ONBOARD, OUTPUT);     // Initialize the pin as an output
+        digitalWrite(RELAY_ONBOARD, RELAY_LOCK);
+
         pinMode(interruptPin, INPUT_PULLUP); // pushbutton on GPIO0
         
         attachInterrupt(digitalPinToInterrupt(interruptPin), handleInterrupt, FALLING);
@@ -1426,9 +1430,13 @@ void loop() {
       //digitalWrite(12, ledState); // and RELAY
 
       eot = 0;  // done with that tag, lets forget it. :-) 
+      // this line is to cautionarily flush any extra serial RFID tag data after we've had a successful one.( eg double-read ) 
+      while (  readerSerial.available() ) { char t = readerSerial.read(); Serial.print("Flushed:"); Serial.println(t); } // flush any remaining bytes.
+
   }
   if ( ( eot < 5) && (eot > 0) ) { 
     Serial.println("incomplete or corrupted RFID read, sorry. ");
+    // this line is to deliberately flush any spurious or incomplete serial RFID data that's less than 5 bytes. 
     while (  readerSerial.available() ) { char t = readerSerial.read(); Serial.print("flushed:"); Serial.println(t); } // flush any remaining bytes.
     eot = 0;
   }

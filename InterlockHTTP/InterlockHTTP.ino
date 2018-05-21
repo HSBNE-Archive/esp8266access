@@ -7,10 +7,20 @@
 #include <Adafruit_NeoPixel.h>
 #include <ArduinoOTA.h>
 
-const char* ssid     = "........";
-const char* password = "........";
+const char* ssid     = "HSBNEWiFi";
+const char* password = "HSBNEWiFiPassword";
 const char* host = "10.0.1.253";
+const char* deviceName = "INTMSGreyLathe";
+
+#define USE_STATIC
+#ifdef USE_STATIC
+IPAddress ip(10,0,1,165);   
+IPAddress gateway(10,0,1,254);   
+IPAddress subnet(255,0,0,0);   
+#endif
+
 const int switchPin = 12;
+const int ledPin = 13;
 const int statePin = 14;
 int contact = 0; // Set default switch state
 
@@ -21,6 +31,8 @@ Adafruit_NeoPixel status = Adafruit_NeoPixel(1, 14, NEO_RGB + NEO_KHZ800);
 void setup() {
   Serial.begin(9600);
   status.begin();
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW);
   Serial.setTimeout(500);
   startWifi();
   Serial.println("Serial Started");
@@ -28,14 +40,15 @@ void setup() {
   pinMode(switchPin, OUTPUT);
 
 
+
   // Port defaults to 8266
   // ArduinoOTA.setPort(8266);
 
   // Hostname defaults to esp8266-[ChipID]
-  ArduinoOTA.setHostname("INT-BandSaw");
+  ArduinoOTA.setHostname(deviceName);
 
   // No authentication by default
-   ArduinoOTA.setPassword((const char *)"newpassword");
+   ArduinoOTA.setPassword((const char *)"passwordgoeshere");
 
   ArduinoOTA.onStart([]() {
     Serial.println("Start");
@@ -89,15 +102,20 @@ void readTag() {
     {
       Serial.print("Tag Number:");
       Serial.println(cardId);
-      Serial.flush();
+      flushSerial();
       checkCard(cardId);
+    } else {
+      flushSerial();
+      Serial.println("incomplete or corrupted RFID read, sorry. ");
     }
   }
 }
 
 
 void checkCard(long tagid) {
-
+  String url = "" + String(host) + "/interlock.php?q=" + String(tagid) + "";
+  Serial.print("Full URI");
+  Serial.println(url);
   Serial.print("connecting to ");
   Serial.println(host);
 
@@ -111,7 +129,7 @@ void checkCard(long tagid) {
   }
 
   // We now create a URI for the request
-  String url = "/interlock.php?q=" + String(tagid) + "";
+  url = "/interlock.php?q=" + String(tagid) + "";
   Serial.print("Requesting URL: ");
   Serial.println(url);
 
@@ -162,6 +180,10 @@ void startWifi () {
   Serial.println(ssid);
 
   WiFi.begin(ssid, password);
+  WiFi.hostname(deviceName);
+  #ifdef USE_STATIC
+  WiFi.config(ip, gateway, subnet);
+  #endif 
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
@@ -219,5 +241,9 @@ char statusLight(char color) {
       }
   }
   status.show();
+}
+
+void flushSerial () {
+    while (  Serial.available() ) { char t = Serial.read(); Serial.print("flushed:"); Serial.println(t); } // flush any remaining bytes.
 }
 

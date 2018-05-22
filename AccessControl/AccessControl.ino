@@ -35,14 +35,14 @@
 // START DEFINES --------------------------------------------------------
 #define HW_SONOFF_CLASSIC 0
 #define HW_WEMOS_D1 1
-#define HW_OTHER 2
-#define HW_NOG_TH16 3
+#define HW_NOG_INTERLOCK 2
+#define HW_NOG_TH16_DOOR 3
 
 // uncomment only one of thee:
 //#define HARDWARE_TYPE  HW_SONOFF_CLASSIC
 //#define HARDWARE_TYPE  HW_WEMOS_D1
-//#define HARDWARE_TYPE  HW_OTHER
-#define HARDWARE_TYPE  HW_NOG_TH16
+#define HARDWARE_TYPE  HW_NOG_INTERLOCK
+//#define HARDWARE_TYPE  HW_NOG_TH16_DOOR
 
 
 #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
@@ -57,13 +57,14 @@
 #define RELAY_ONBOARD 12   // THIS IS good.
 #endif
 
-#if HARDWARE_TYPE == HW_OTHER    // nogs interlock HW on wood saw.. ( untested with this code) 
+#if HARDWARE_TYPE == HW_NOG_INTERLOCK    // nogs interlock HW on wood saw etc.. ( ) 
 #define RGBLEDPIN            14  
 #define USE_NEOPIXELS 1
 #define RELAY_ONBOARD 12 
+#define GREEN_ONBOARD_LED 13 // not really used for user-visible stuff, as we have RGB LED, but it does exist.
 #endif
 
-#if HARDWARE_TYPE == HW_NOG_TH16    // nogs DOOR hardware with TH16, two round metal connectors on case ( a 2 pin for solenoid/door and a 4 pin for rfid etc ) 
+#if HARDWARE_TYPE == HW_NOG_TH16_DOOR    // nogs DOOR hardware with TH16, two round metal connectors on case ( a 2 pin for solenoid/door and a 4 pin for rfid etc ) 
 #define GREEN_ONBOARD_LED 13
 #define RELAY_ONBOARD 12 
 #endif
@@ -112,10 +113,10 @@ Adafruit_NeoPixel NEO = Adafruit_NeoPixel(1, RGBLEDPIN, NEO_RGB + NEO_KHZ800);
 #if HARDWARE_TYPE == HW_WEMOS_D1
 #define EGRESS_OR_ESTOP D4 // aka GPIO2
 #endif
-#if HARDWARE_TYPE == HW_OTHER
+#if HARDWARE_TYPE == HW_NOG_INTERLOCK
 #define EGRESS_OR_ESTOP 0
 #endif
-#if HARDWARE_TYPE == HW_NOG_TH16    
+#if HARDWARE_TYPE == HW_NOG_TH16_DOOR    
 #define EGRESS_OR_ESTOP 0   // GPIO0
 #endif
 
@@ -138,13 +139,18 @@ uint8_t Seconds, Minutes, Hours, WeekDay, Year, Month, Day;
 
 #if HARDWARE_TYPE == HW_WEMOS_D1
 #define RFID_RX 13   // pin labeled D7 = GPIO13
+SoftwareSerial readerSerial(RFID_RX, SW_SERIAL_UNUSED_PIN); // reader/s RX, TX is usually on it's own GPIO, except for HW_NOG_TH16_DOOR
 #endif
 
-#if HARDWARE_TYPE != HW_NOG_TH16    
-SoftwareSerial readerSerial(RFID_RX, SW_SERIAL_UNUSED_PIN); // reader/s RX, TX is usually on it's own GPIO, except for HW_NOG_TH16
+#if HARDWARE_TYPE == HW_SONOFF_CLASSIC    
+SoftwareSerial readerSerial(RFID_RX, SW_SERIAL_UNUSED_PIN); // reader/s RX, TX is usually on it's own GPIO, except for HW_NOG_TH16_DOOR
 #endif
 
-#if HARDWARE_TYPE == HW_NOG_TH16 // RFID tag reader is on same RX/TX as programming port / debug console, and is unplugged during programming. 
+#if HARDWARE_TYPE == HW_NOG_TH16_DOOR // RFID tag reader is on same RX/TX as programming port / debug console, and is unplugged during programming. 
+#define readerSerial Serial
+#endif
+
+#if HARDWARE_TYPE == HW_NOG_INTERLOCK // RFID tag reader is on same RX/TX as programming port / debug console, and is unplugged during programming. 
 #define readerSerial Serial
 #endif
 
@@ -586,13 +592,23 @@ void external_green_off() { digitalWrite(GREEN_EXTERNAL_LED, 0 ); }
 
 void setup() {
 
-        #if HARDWARE_TYPE != HW_NOG_TH16    
+
+        #if HARDWARE_TYPE == HW_SONOFF_CLASSIC    
+        Serial.begin(19200);
+        readerSerial.begin(9600); 
+        #endif
+           
+        #if HARDWARE_TYPE == HW_WEMOS_D1    
         Serial.begin(19200);
         readerSerial.begin(9600); 
         #endif
 
         // the NOG hardware has the serrila debug console on the same hardware as the RFID reader, so needs to run at the same BAUD rate as the RFID reader. 
-        #if HARDWARE_TYPE == HW_NOG_TH16    
+        #if HARDWARE_TYPE == HW_NOG_INTERLOCK    
+        Serial.begin(9600);
+        #endif
+        // the NOG hardware has the serrila debug console on the same hardware as the RFID reader, so needs to run at the same BAUD rate as the RFID reader. 
+        #if HARDWARE_TYPE == HW_NOG_TH16_DOOR    
         Serial.begin(9600);
         #endif
         
@@ -605,7 +621,7 @@ void setup() {
         #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
         pinMode(GREEN_ONBOARD_LED, OUTPUT);     // Initialize the  pin as an output
         #endif
-        #if HARDWARE_TYPE == HW_NOG_TH16
+        #if HARDWARE_TYPE == HW_NOG_TH16_DOOR
         pinMode(GREEN_ONBOARD_LED, OUTPUT);     // Initialize the  pin as an output
         #endif
         pinMode(RED_LED, OUTPUT);     // Initialize the  pin as an output
@@ -617,7 +633,7 @@ void setup() {
         #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
         digitalWrite(GREEN_ONBOARD_LED, HIGH);   // Turn the LED on (Note that LOW is the voltage level
         #endif
-        #if HARDWARE_TYPE == HW_NOG_TH16
+        #if HARDWARE_TYPE == HW_NOG_TH16_DOOR
         digitalWrite(GREEN_ONBOARD_LED, HIGH);   // Turn the LED on (Note that LOW is the voltage level
         #endif
 
@@ -700,8 +716,11 @@ void setup() {
         #if HARDWARE_TYPE == HW_WEMOS_D1
         Serial.println(F("WEMOS-D1"));        
         #endif
-        #if HARDWARE_TYPE == HW_OTHER
-        Serial.println(F("UNKNOWN-HARDWARE-TYPE"));        
+        #if HARDWARE_TYPE == HW_NOG_INTERLOCK
+        Serial.println(F("NOG_INTERLOCK_HW"));        
+        #endif
+        #if HARDWARE_TYPE == HW_NOG_TH16_DOOR
+        Serial.println(F("NOG_TH16_DOOR"));        
         #endif
                
         int tries = 0;
@@ -714,7 +733,7 @@ void setup() {
               #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
               internal_green_off(); 
               #endif
-              #if HARDWARE_TYPE == HW_NOG_TH16
+              #if HARDWARE_TYPE == HW_NOG_TH16_DOOR
               internal_green_off(); 
               #endif
               red_off();  
@@ -723,7 +742,7 @@ void setup() {
               #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
               internal_green_on(); 
               #endif
-              #if HARDWARE_TYPE == HW_NOG_TH16
+              #if HARDWARE_TYPE == HW_NOG_TH16_DOOR
               internal_green_on(); 
               #endif
               red_on();  
@@ -751,7 +770,7 @@ void setup() {
         #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
         internal_green_on();
         #endif
-        #if HARDWARE_TYPE == HW_NOG_TH16
+        #if HARDWARE_TYPE == HW_NOG_TH16_DOOR
         internal_green_on();
         #endif        
         #ifdef SONGS
@@ -832,7 +851,7 @@ void card_ok_entry_permitted() {
     #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
     internal_green_on();
     #endif
-    #if HARDWARE_TYPE == HW_NOG_TH16
+    #if HARDWARE_TYPE == HW_NOG_TH16_DOOR
     internal_green_on();
     #endif
     
@@ -1405,7 +1424,7 @@ void loop() {
         #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
         internal_green_on();
         #endif
-        #if HARDWARE_TYPE == HW_NOG_TH16
+        #if HARDWARE_TYPE == HW_NOG_TH16_DOOR
         internal_green_on();
         #endif        
         //external_green_on(); already turned on 
@@ -1460,7 +1479,7 @@ void loop() {
         #if HARDWARE_TYPE == HW_SONOFF_CLASSIC
         internal_green_off();
         #endif
-        #if HARDWARE_TYPE == HW_NOG_TH16
+        #if HARDWARE_TYPE == HW_NOG_TH16_DOOR
         internal_green_off();
         #endif
         

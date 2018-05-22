@@ -1556,25 +1556,49 @@ void GetDateTimeFromUnix( uint32_t unix) {
 char statusLight(char color) {
   Serial.print("statusLight:");
   Serial.println(color);
+
+  // yes, it's stupid that the two different neopixel hardware have different channel orders for RGB and GRB or something, but that's how it is.
+  //the WemosD1 and the Nog Interlock RGB leds are different only in their color channel order/s
+
   switch (color) {
     case 'g':
       {
+#if HARDWARE_TYPE == HW_WEMOS_D1
         NEO.setPixelColor(0, 250, 0, 0); //green
+#endif
+#if HARDWARE_TYPE == HW_NOG_INTERLOCK
+        NEO.setPixelColor(0, 0, 250, 0);
+#endif
         break;
       }
     case 'r':
       {
+#if HARDWARE_TYPE == HW_WEMOS_D1
         NEO.setPixelColor(0, 0, 250, 0); // red
+#endif
+#if HARDWARE_TYPE == HW_NOG_INTERLOCK
+        NEO.setPixelColor(0, 250, 0, 0);
+#endif
         break;
       }
     case 'b':
       {
+#if HARDWARE_TYPE == HW_WEMOS_D1
         NEO.setPixelColor(0, 0, 0, 250); // blue
+#endif
+#if HARDWARE_TYPE == HW_NOG_INTERLOCK
+        NEO.setPixelColor(0, 0, 0, 250);
+#endif
         break;
       }
     case 'y':
       {
+#if HARDWARE_TYPE == HW_WEMOS_D1
         NEO.setPixelColor(0, 20, 20, 0); // light yellow
+#endif
+#if HARDWARE_TYPE == HW_NOG_INTERLOCK
+        NEO.setPixelColor(0, 255, 100, 0);
+#endif
         break;
       }
     case 'o':

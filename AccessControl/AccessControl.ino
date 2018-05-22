@@ -722,7 +722,7 @@ void setup() {
         #if HARDWARE_TYPE == HW_NOG_TH16_DOOR
         Serial.println(F("NOG_TH16_DOOR"));        
         #endif
-               
+                       
         int tries = 0;
         while ((WiFi.status() != WL_CONNECTED ) && (tries < 50 ) ){
           Serial.println(".....");
@@ -921,7 +921,11 @@ int remote_server_says_yes( unsigned long tag, unsigned long int door, String na
     }
 
     Serial.println(F("http client connected"));
-    
+
+//what endpoint to we make contct to
+//and what data do we sent it
+//depends on if its a door or a interlock 
+#if INTERLOCK_OR_DOOR == ISDOOR
     client.print("GET /logger.php?secret="); 
     client.print(programmed_secret);
     client.print("&q=");
@@ -931,6 +935,11 @@ int remote_server_says_yes( unsigned long tag, unsigned long int door, String na
     client.print("&n=");
     client.println(name);
     client.println();
+#endif
+#if INTERLOCK_OR_DOOR == ISINTERLOCK
+    client.print("/interlock.php?q=");
+    client.print(String(tag));
+#endif
 
     // delay some arbitrary amount for the server to respond to the client. say, 1 sec. ?
     //delay(2000);

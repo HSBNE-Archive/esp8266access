@@ -2,15 +2,15 @@
 /*
     Simple ESP8266 Interlock Control
 */
-#include <ESP8266HTTPUpdateServer.h>
+#include <ESP8266WebServer.h>
 #include <ESP8266WiFi.h>
-#include <Adafruit_NeoPixel.h>
 #include <ArduinoOTA.h>
+#include <WS2812FX.h>
 
 
 
-const char* ssid     = "Wifi Network Here";
-const char* password = "Wifi Password Here";
+const char* ssid     = "HSBNEWiFi";
+const char* password = "HSBNE Wifi Password Here";
 const char* host = "10.0.1.253";
 const char* deviceName = "INT-TestPlate";
 
@@ -32,16 +32,16 @@ int lastReadSuccess = 5000; // Set last read success base state. Setting to 10 s
 uint32_t lastId = 0;
 int activeStart = 0;
 
-
-
-
-Adafruit_NeoPixel status = Adafruit_NeoPixel(1, 14, NEO_RGB + NEO_KHZ800);
+WS2812FX ws2812fx = WS2812FX(1, 14, NEO_RGB + NEO_KHZ800);
+ESP8266WebServer http(80);
 
 
 void setup() {
   Serial.begin(9600);
   Serial.println("Serial Started");
-  status.begin();
+  ws2812fx.init();
+  ws2812fx.setBrightness(250);
+  ws2812fx.start();
   statusLight('p');
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, LOW);
@@ -49,19 +49,20 @@ void setup() {
   startWifi();
   // Set switch pin to output.
   pinMode(switchPin, OUTPUT);
-
+  digitalWrite(switchPin, LOW); // Always make sure interlock is off on boot.
   ArduinoOTA.setHostname(deviceName);
-  ArduinoOTA.setPassword((const char *)"OTA Password here");
+  ArduinoOTA.setPassword((const char *)"OTAPASSWORDHERE");
 
   ArduinoOTA.onStart([]() {
     Serial.println("Start");
-    statusLight('y');
+    statusLight('p');
   });
   ArduinoOTA.onEnd([]() {
     Serial.println("\nEnd");
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
     Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+    ws2812fx.service();
   });
   ArduinoOTA.onError([](ota_error_t error) {
     Serial.printf("Error[%u]: ", error);
@@ -72,22 +73,40 @@ void setup() {
     else if (error == OTA_END_ERROR) Serial.println("End Failed");
   });
   ArduinoOTA.begin();
+  
+  http.on("/", httpRoot);
+
+  http.on("/reboot", [](){
+    http.sendHeader("Location","/");        
+    // Redirect back to root in case chrome refreshes.
+    http.send(303, "text/plain", "Rebooting.");       
+    ESP.reset();
+  });
+  http.begin();
+  Serial.println("HTTP server started");
 }
 
 void loop()
 {
   yield();
   ArduinoOTA.handle();
+  http.handleClient();
   if (millis() > (lastReadSuccess + RFID_SQUELCH_TIME)) {
     if (!contact) {
       statusLight('b');
+    } else {
+      statusLight('g');
     }
-    if (Serial.available()) { readTag(); }
+    if (Serial.available()) {
+      readTag();
+    }
   } else {
     flushSerial();
     yield();
   }
   //Serial.println("Loop complete.");
+  ws2812fx.service();
+
 }
 
 void readTag() {
@@ -163,8 +182,8 @@ void checkCard(long tagid) {
 
   // This will send the request to the server
   client.println(String("GET ") + url + " HTTP/1.1\r\n" +
-               "Host: " + host + "\r\n" +
-               "Connection: close\r\n\r\n");
+                 "Host: " + host + "\r\n" +
+                 "Connection: close\r\n\r\n");
 
   int timeout = millis() + 1500;
   while (client.available() == 0) {
@@ -177,12 +196,14 @@ void checkCard(long tagid) {
   // Read all the lines of the reply from server and print them to Serial
   String line = "";
   while (client.available()) {
+    ws2812fx.service();
+    delay(10);
     line = client.readStringUntil('\n');
   }
   client.stop();
   Serial.println(millis());
-  Serial.println("Server response: ");
-  Serial.print(line);
+  Serial.print("Server response: ");
+  Serial.println(line);
   //  Serial.print("Access byte.");
   //  Serial.println(line.endsWith("1"));
   if (line.endsWith("1")) {
@@ -222,6 +243,8 @@ void startWifi () {
   while (WiFi.status() != WL_CONNECTED) {
     Serial.print(".");
     delay(10);
+    ws2812fx.service();
+
 
   }
 
@@ -239,7 +262,7 @@ void toggleContact() {
       {
         contact = 1;
         digitalWrite(switchPin, HIGH);
-        statusLight('g');
+        statusLight('e');
         break;
       }
     case 1:
@@ -256,36 +279,41 @@ char statusLight(char color) {
   switch (color) {
     case 'r':
       {
-        status.setPixelColor(0, 250, 0, 0);
+        ws2812fx.setSegment(0,  0,  0, FX_MODE_STATIC, 0xFF0000, 1000, false);
         break;
       }
     case 'g':
       {
-        status.setPixelColor(0, 0, 250, 0);
+        ws2812fx.setSegment(0,  0,  0, FX_MODE_STATIC, 0x00FF00, 1000, false);
         break;
       }
     case 'b':
       {
-        status.setPixelColor(0, 0, 0, 250);
+        ws2812fx.setSegment(0,  0,  0, FX_MODE_STATIC, 0x0000FF, 1000, false);
         break;
       }
     case 'y':
       {
-        status.setPixelColor(0, 255, 100, 0);
+        ws2812fx.setSegment(0,  0,  0, FX_MODE_STROBE, 0xFF6400, 250, false);
         break;
       }
     case 'p':
       {
-        status.setPixelColor(0, 128, 0, 128);
+        ws2812fx.setSegment(0,  0,  0, FX_MODE_BREATH, 0x800080, 250, false);
         break;
       }
     case 'w':
       {
-        status.setPixelColor(0, 255, 255, 255);
+        ws2812fx.setSegment(0,  0,  0, FX_MODE_BREATH, 0x0000FF, 250, false);
+        break;
+      }
+    case 'e':
+      {
+        ws2812fx.setSegment(0,  0,  0, FX_MODE_BREATH, 0x0000FF, 250, false);
         break;
       }
   }
-  status.show();
+  ws2812fx.service();
 }
 
 void flushSerial () {
@@ -318,8 +346,8 @@ void updateServer(long tagid, int activeTime) {
 
   // This will send the request to the server
   client.println(String("GET ") + url + " HTTP/1.1\r\n" +
-               "Host: " + host + "\r\n" +
-               "Connection: close\r\n\r\n");
+                 "Host: " + host + "\r\n" +
+                 "Connection: close\r\n\r\n");
 
   int timeout = millis() + 1500;
   while (client.available() == 0) {
@@ -339,5 +367,10 @@ void updateServer(long tagid, int activeTime) {
   Serial.println("closing connection");
 }
 
-
+void httpRoot() {
+    String message = "<h1> This is interlock " + String(deviceName) + "</h1>";
+    message += "Contactor is currently " + String(contact) + "<br />";
+    message += "Last swiped tag was " + String(lastId)  + "<br />";
+    http.send(200, "text/html", message);
+}
 
